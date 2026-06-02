@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EcoXAI Lean</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="connection-banner">Disconnected — reconnecting...</div>
+
+<div id="app">
+
+  <!-- ── SIDEBAR ── -->
+  <nav id="sidebar">
+    <div class="sidebar-title">EcoXAI</div>
+    <div class="nav-item active" data-view="datasets">
+      <span class="nav-icon">📂</span>Datasets
+    </div>
+    <div class="nav-item" data-view="pipeline">
+      <span class="nav-icon">⚡</span>Pipeline
+    </div>
+    <div class="nav-item" data-view="hypotheses">
+      <span class="nav-icon">🔬</span>Hypotheses
+    </div>
+    <div class="nav-item" data-view="settings">
+      <span class="nav-icon">⚙️</span>Settings
+    </div>
+  </nav>
+
+  <!-- ── MAIN ── -->
+  <main id="main">
+
+    <!-- DATASETS VIEW -->
+    <div id="view-datasets" class="view active">
+      <div class="view-header">
+        <h2>Datasets</h2>
+        <span class="count" id="ds-count">0</span>
+        <div class="status-dot inactive" id="ds-status"></div>
+      </div>
+      <div class="view-content">
+        <label class="upload-area" for="file-upload">
+          <div style="font-size:24px;margin-bottom:8px">📂</div>
+          <div style="font-weight:600;margin-bottom:4px">Drop a file or click to upload</div>
+          <div style="font-size:11px">CSV, JSON, or Feather — auto-normalizes and runs pipeline</div>
+          <input id="file-upload" type="file" accept=".csv,.json,.feather">
+        </label>
+        <div style="margin-top:12px;font-size:11px;color:var(--text-dim)">
+          Or drop files directly into <code>lean/backend/datasets/</code>
+        </div>
+        <div class="dataset-list" id="dataset-list" style="margin-top:12px"></div>
+        <div id="wiki-area"></div>
+      </div>
+    </div>
+
+    <!-- PIPELINE VIEW -->
+    <div id="view-pipeline" class="view">
+      <div class="view-header">
+        <h2>Pipeline</h2>
+        <span class="auto-badge on" id="auto-badge">AUTO</span>
+        <div class="pipeline-controls">
+          <button class="btn danger" onclick="app.pausePipeline()">Pause</button>
+          <button class="btn primary" onclick="app.resumePipeline()">Resume</button>
+          <button class="btn" onclick="app.refreshStatus()">Refresh</button>
+        </div>
+      </div>
+      <div class="pipeline-split">
+        <div class="pipeline-jobs">
+          <div class="stage-list" id="stage-list"></div>
+        </div>
+        <div class="pipeline-detail" id="pipeline-detail">
+          <div class="detail-empty">
+            <div style="font-size:32px;margin-bottom:8px">⚡</div>
+            <p>Select a job to view details</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- HYPOTHESES VIEW -->
+    <div id="view-hypotheses" class="view">
+      <div class="view-header">
+        <h2>Hypotheses</h2>
+        <span class="count" id="hyp-count">0</span>
+      </div>
+      <div class="hyp-controls">
+        <div class="stats-bar">
+          <div class="stat"><div class="val" id="stat-total">0</div><div class="lbl">Total</div></div>
+          <div class="stat"><div class="val green" id="stat-supported">0</div><div class="lbl">Supported</div></div>
+          <div class="stat"><div class="val red" id="stat-rejected">0</div><div class="lbl">Rejected</div></div>
+          <div class="stat"><div class="val yellow" id="stat-pending">0</div><div class="lbl">Pending</div></div>
+        </div>
+        <div class="vault-toolbar">
+          <input type="text" id="hyp-search" class="search-input" placeholder="Search hypotheses...">
+          <select id="hyp-sort" class="select-input">
+            <option value="conf-desc">Confidence ↓</option>
+            <option value="conf-asc">Confidence ↑</option>
+            <option value="status">Status</option>
+            <option value="type">Type</option>
+            <option value="feature">Feature</option>
+            <option value="newest">Newest</option>
+          </select>
+          <select id="hyp-group" class="select-input">
+            <option value="status">Group: Status</option>
+            <option value="type">Group: Type</option>
+            <option value="none">No Grouping</option>
+          </select>
+        </div>
+      </div>
+      <div class="hyp-split">
+        <div class="hyp-list-pane">
+          <div class="hypothesis-list" id="hypothesis-list">
+            <div class="empty-state"><div class="icon">🔬</div><p>No hypotheses yet.<br>Run the pipeline to generate them.</p></div>
+          </div>
+        </div>
+        <div class="hyp-detail-pane" id="hyp-detail">
+          <div class="detail-empty">
+            <div style="font-size:32px;margin-bottom:8px">🔬</div>
+            <p>Select a hypothesis to view details</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SETTINGS VIEW -->
+    <div id="view-settings" class="view">
+      <div class="view-header">
+        <h2>Settings</h2>
+      </div>
+      <div class="view-content">
+        <div class="settings-form">
+          <div class="settings-section">
+            <div class="settings-section-title">Connection</div>
+            <div class="settings-row">
+              <label for="s-host">Backend host:port</label>
+              <input type="text" id="s-host" class="settings-input" placeholder="localhost:8081">
+            </div>
+          </div>
+          <div class="settings-section">
+            <div class="settings-section-title">Hypotheses</div>
+            <div class="settings-row">
+              <label for="s-hyp-limit">Max displayed</label>
+              <input type="number" id="s-hyp-limit" class="settings-input" min="10" max="1000">
+            </div>
+            <div class="settings-row">
+              <label for="s-hyp-refresh">Refresh interval (s)</label>
+              <input type="number" id="s-hyp-refresh" class="settings-input" min="5" max="300">
+            </div>
+          </div>
+          <div class="settings-section">
+            <div class="settings-section-title">Logs</div>
+            <div class="settings-row">
+              <label for="s-autoscroll">Auto-scroll logs</label>
+              <input type="checkbox" id="s-autoscroll">
+            </div>
+          </div>
+          <div class="settings-section">
+            <div class="settings-section-title">Budget</div>
+            <div class="settings-row">
+              <label for="s-budget-limit">Limit (USD)</label>
+              <input type="number" id="s-budget-limit" class="settings-input" min="0" step="1" placeholder="10">
+            </div>
+            <div class="settings-row" style="align-items:center">
+              <label>Spent</label>
+              <div style="display:flex;align-items:center;gap:8px">
+                <span id="s-budget-spent" style="font-variant-numeric:tabular-nums">$0.0000</span>
+                <span id="s-budget-bar-wrap" style="flex:1;height:6px;background:var(--surface);border-radius:3px;min-width:80px;overflow:hidden">
+                  <div id="s-budget-bar" style="height:100%;width:0%;background:var(--green);border-radius:3px;transition:width 0.3s,background 0.3s"></div>
+                </span>
+                <span id="s-budget-limit-label" style="font-variant-numeric:tabular-nums;color:var(--text-dim)">/ $10.00</span>
+              </div>
+            </div>
+            <div class="settings-row">
+              <label></label>
+              <button class="btn danger" onclick="app.resetBudget()">Reset Budget</button>
+            </div>
+          </div>
+          <button class="btn primary" onclick="app.saveSettings()">Save Settings</button>
+          <div id="settings-saved" style="display:none;margin-top:8px;font-size:12px;color:var(--green)">✓ Saved</div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
