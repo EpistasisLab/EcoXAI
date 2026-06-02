@@ -38,20 +38,12 @@ const PIPELINE_STAGES = [
     prompt: 'Run the hypothesis generation phase. Follow the pipeline-hypothesize skill instructions in your workspace.',
   },
   {
-    id: 'test',
-    name: 'Test Hypotheses',
+    id: 'analyze',
+    name: 'Test & Validate',
     trigger: 'hypotheses_extracted',
     auto: true,
-    skill: 'public:pipeline-test',
-    prompt: 'Run the hypothesis testing phase. Follow the pipeline-test skill instructions in your workspace.',
-  },
-  {
-    id: 'validate',
-    name: 'Validate & Report',
-    trigger: 'job_completed:test',
-    auto: true,
-    skill: 'public:pipeline-validate',
-    prompt: 'Run the validation and reporting phase. Follow the pipeline-validate skill instructions in your workspace.',
+    skill: 'public:pipeline-analyze',
+    prompt: 'Run the combined hypothesis testing and validation phase. Follow the pipeline-analyze skill instructions in your workspace.',
   }
 ];
 // ═══════════════════════════════════════════════════════
@@ -104,7 +96,7 @@ class Orchestrator extends EventEmitter {
       }
 
       // Feed test results back to hypothesis statuses
-      if (stageId === 'test') {
+      if (stageId === 'analyze') {
         this._processTestResults(datasetId, artifacts).catch(err =>
           console.warn('[Orchestrator] Verdict processing failed:', err.message)
         );

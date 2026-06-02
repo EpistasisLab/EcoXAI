@@ -186,3 +186,5 @@ ecoxai/backend/data/executions.*
 ecoxai/backend/data/wikis/
 ecoxai/backend/node_modules/
 ecoxai/backend/data/state.json
+
+CLAUDE.md

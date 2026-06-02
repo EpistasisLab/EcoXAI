@@ -200,12 +200,11 @@ async function loadWiki(datasetId) {
     const data = await resp.json();
     if (!data.wiki) { area.innerHTML = ''; return; }
     const wiki = data.wiki;
-    const portrait = (wiki.portrait || '').substring(0, 400);
     area.innerHTML = `
       <div class="wiki-section">
         <h4>Portrait</h4>
-        <div>${escHtml(portrait)}${wiki.portrait?.length > 400 ? '…' : ''}</div>
-        ${wiki.insights ? `<h4 style="margin-top:8px">Insights</h4><div>${escHtml((wiki.insights || '').substring(0, 300))}…</div>` : ''}
+        ${renderMarkdown(wiki.portrait || '')}
+        ${wiki.insights ? `<h4 style="margin-top:8px">Insights</h4>${renderMarkdown(wiki.insights || '')}` : ''}
       </div>`;
   } catch { area.innerHTML = ''; }
 }
@@ -385,6 +384,12 @@ async function loadAssetContent(jobId, filename) {
   previewArea.innerHTML = '<div style="padding:8px;font-size:12px;color:var(--text-dim)"><span class="spinner"></span> Loading…</div>';
 
   try {
+    if (isImageFile(filename)) {
+      const url = `${apiBase()}/jobs/${jobId}/artifacts/${encodeURIComponent(filename)}`;
+      previewArea.innerHTML = `<div class="asset-image-wrap"><img class="asset-image" src="${escAttr(url)}" alt="${escAttr(filename)}"></div>`;
+      return;
+    }
+
     const resp = await fetch(`${apiBase()}/jobs/${jobId}/artifacts/${encodeURIComponent(filename)}`);
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const text = await resp.text();
@@ -395,6 +400,8 @@ async function loadAssetContent(jobId, filename) {
       let display = text;
       try { display = JSON.stringify(JSON.parse(text), null, 2); } catch {}
       previewArea.innerHTML = `<pre class="asset-preview">${escHtml(display.slice(0, 10000))}</pre>`;
+    } else if (filename.endsWith('.md')) {
+      previewArea.innerHTML = renderMarkdown(text);
     } else {
       previewArea.innerHTML = `<pre class="asset-preview">${escHtml(text.slice(0, 10000))}</pre>`;
     }
@@ -789,6 +796,12 @@ window.app = {
     if (!previewArea) return;
     previewArea.innerHTML = '<div style="padding:8px;font-size:12px;color:var(--text-dim)"><span class="spinner"></span> Loading…</div>';
     try {
+      if (isImageFile(filename)) {
+        const url = `${apiBase()}/jobs/${jobId}/artifacts/${encodeURIComponent(filename)}`;
+        previewArea.innerHTML = `<div class="asset-image-wrap"><img class="asset-image" src="${escAttr(url)}" alt="${escAttr(filename)}"></div>`;
+        return;
+      }
+
       const resp = await fetch(`${apiBase()}/jobs/${jobId}/artifacts/${encodeURIComponent(filename)}`);
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const text = await resp.text();
@@ -798,6 +811,8 @@ window.app = {
         let display = text;
         try { display = JSON.stringify(JSON.parse(text), null, 2); } catch {}
         previewArea.innerHTML = `<pre class="asset-preview">${escHtml(display.slice(0, 10000))}</pre>`;
+      } else if (filename.endsWith('.md')) {
+        previewArea.innerHTML = renderMarkdown(text);
       } else {
         previewArea.innerHTML = `<pre class="asset-preview">${escHtml(text.slice(0, 10000))}</pre>`;
       }
@@ -860,6 +875,18 @@ window.app = {
 };
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
+const IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.bmp']);
+
+function isImageFile(name) {
+  const dot = name.lastIndexOf('.');
+  return dot !== -1 && IMAGE_EXTS.has(name.slice(dot).toLowerCase());
+}
+
+function renderMarkdown(text) {
+  if (typeof marked === 'undefined') return `<pre class="asset-preview">${escHtml(text)}</pre>`;
+  return `<div class="markdown-body">${marked.parse(text)}</div>`;
+}
+
 function escHtml(str) {
   if (!str) return '';
   return String(str)
