@@ -17,7 +17,6 @@ const attachHypothesisReportingRoutes = require('./hypotheses/reporting');
  * @param {Function} deps.saveState - Function to persist state
  * @param {Function} deps.broadcast - WebSocket broadcast function
  * @param {Object} deps.dbManager - Database manager service
- * @param {Object} deps.hypothesisAgent - Hypothesis agent service
  * @param {Object} deps.volumeManager - Volume manager service
  * @param {Function} deps.stateRepo - Function to get state repository instance
  */
