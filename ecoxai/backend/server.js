@@ -285,7 +285,6 @@ function watchDatasetFolder() {
 
       try {
         const buffer = fs.readFileSync(filePath);
-        const FormData = require('stream');
 
         // Simulate upload by directly processing
         const datasetId = `dataset_${Date.now()}`;

@@ -22,11 +22,6 @@ if (!fs.existsSync(WIKIS_DIR)) {
   fs.mkdirSync(WIKIS_DIR, { recursive: true });
 }
 
-// Helper to get storageService without circular require at module load
-function getStorage() {
-  try { return require('./storageService'); } catch { return null; }
-}
-
 class WikiService {
   constructor() {
     this.anthropic = null;
@@ -76,45 +71,17 @@ class WikiService {
     return dir;
   }
 
-  async _read(datasetId, filename) {
-    const storage = getStorage();
-    if (storage && storage._healthy) {
-      try {
-        const content = await storage.getWikiFile(datasetId, filename);
-        if (content !== null) return content;
-      } catch { /* fall through to local */ }
-    }
-    // Local filesystem fallback
+  _read(datasetId, filename) {
     const fp = path.join(this._wikiDir(datasetId), filename);
     return fs.existsSync(fp) ? fs.readFileSync(fp, 'utf-8') : null;
   }
 
-  async _write(datasetId, filename, content) {
-    const storage = getStorage();
-    if (storage && storage._healthy) {
-      try {
-        await storage.writeWikiFile(datasetId, filename, content);
-        return;
-      } catch (err) {
-        console.warn(`[Wiki] SeaweedFS write failed, using local fallback:`, err.message);
-      }
-    }
-    // Local filesystem fallback
+  _write(datasetId, filename, content) {
     this._ensureDir(datasetId);
     fs.writeFileSync(path.join(this._wikiDir(datasetId), filename), content, 'utf-8');
   }
 
-  async _append(datasetId, filename, content) {
-    const storage = getStorage();
-    if (storage && storage._healthy) {
-      try {
-        await storage.appendWikiFile(datasetId, filename, content);
-        return;
-      } catch (err) {
-        console.warn(`[Wiki] SeaweedFS append failed, using local fallback:`, err.message);
-      }
-    }
-    // Local filesystem fallback
+  _append(datasetId, filename, content) {
     this._ensureDir(datasetId);
     fs.appendFileSync(path.join(this._wikiDir(datasetId), filename), content, 'utf-8');
   }
