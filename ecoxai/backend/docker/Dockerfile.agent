@@ -1,0 +1,83 @@
+FROM python:3.11-slim
+
+# Install system dependencies (including build tools and ODBC headers for pyodbc)
+RUN apt-get update && apt-get install -y \
+    curl \
+    git \
+    gnupg \
+    build-essential \
+    unixodbc-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Microsoft ODBC Driver 18 for SQL Server + Kerberos client (for CSMC domain auth)
+RUN curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg \
+    && curl -fsSL https://packages.microsoft.com/config/debian/12/prod.list \
+        | sed 's|\[arch=|[signed-by=/usr/share/keyrings/microsoft-prod.gpg arch=|' \
+        > /etc/apt/sources.list.d/mssql-release.list \
+    && apt-get update \
+    && ACCEPT_EULA=Y apt-get install -y msodbcsql18 krb5-user \
+    && rm -rf /var/lib/apt/lists/*
+
+# Configure Kerberos for CSMC domain
+RUN printf '[libdefaults]\n\
+    default_realm = CSMC.EDU\n\
+    dns_lookup_realm = true\n\
+    dns_lookup_kdc = true\n\
+    ticket_lifetime = 24h\n\
+    forwardable = true\n\
+\n\
+[realms]\n\
+    CSMC.EDU = {\n\
+        kdc = csmc.edu\n\
+        admin_server = csmc.edu\n\
+    }\n\
+\n\
+[domain_realm]\n\
+    .csmc.edu = CSMC.EDU\n\
+    csmc.edu = CSMC.EDU\n' > /etc/krb5.conf
+
+# Install Node.js (required for Claude Code)
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs
+
+# Install Claude Code CLI
+RUN npm install -g @anthropic-ai/claude-code
+
+# Install Python data science stack + csanalyze-dataset-generator dependencies
+RUN pip install --no-cache-dir \
+    pandas \
+    numpy \
+    scikit-learn \
+    matplotlib \
+    seaborn \
+    jupyter \
+    scipy \
+    statsmodels \
+    neo4j \
+    pyodbc \
+    requests \
+    openai \
+    python-dotenv
+
+# Create non-root user for running Claude Code
+RUN useradd -m -u 1000 -s /bin/bash claude && \
+    mkdir -p /workspace /datasets /output && \
+    chown -R claude:claude /workspace /datasets /output
+
+WORKDIR /workspace
+
+# Set HOME to /workspace so ~/.claude resolves to /workspace/.claude
+ENV HOME=/workspace
+
+# Copy Claude Code guidance document
+COPY CLAUDE.md /workspace/CLAUDE.md
+
+# Entry point that runs Claude Code with the task
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh && \
+    chown claude:claude /workspace/CLAUDE.md /entrypoint.sh
+
+# Switch to non-root user
+USER claude
+
+ENTRYPOINT ["/entrypoint.sh"]
