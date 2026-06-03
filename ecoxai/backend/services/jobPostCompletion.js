@@ -56,34 +56,49 @@ async function processJobCompletion({
       }
 
       if (hypotheses.length > 0) {
+        let insertedCount = 0;
         for (const hyp of hypotheses) {
+          // hypothesis_text is NOT NULL in the DB. Skip malformed entries so one
+          // bad item doesn't abort the whole batch (previously the loop threw and
+          // every hypothesis for the run was lost).
+          if (typeof hyp.hypothesis_text !== 'string' || !hyp.hypothesis_text.trim()) {
+            console.warn(`[${jobId}] Skipping hypothesis with missing hypothesis_text`);
+            continue;
+          }
+
           let priority = 1000;
           if (typeof hyp.confidence_score === 'number') {
             const clampedConfidence = Math.max(0, Math.min(1, hyp.confidence_score));
             priority = Math.floor(1000 - (clampedConfidence * 900));
           }
 
-          await dbManager.createHypothesis({
-            run_id: runId,
-            turn_number: hyp.turn_number || 1,
-            hypothesis_text: hyp.hypothesis_text,
-            hypothesis_type: hyp.hypothesis_type || null,
-            confidence_score: hyp.confidence_score || null,
-            status: 'proposed',
-            expected_importance: hyp.expected_importance || null,
-            expected_metric: hyp.expected_metric || null,
-            alzkb_source: hyp.alzkb_source || null,
-            feature_name: hyp.feature_name || null,
-            priority
-          });
+          // Per-item try/catch: a single failed insert must not drop the rest.
+          try {
+            await dbManager.createHypothesis({
+              run_id: runId,
+              turn_number: hyp.turn_number || 1,
+              hypothesis_text: hyp.hypothesis_text,
+              hypothesis_type: hyp.hypothesis_type || null,
+              confidence_score: hyp.confidence_score || null,
+              status: 'proposed',
+              expected_importance: hyp.expected_importance || null,
+              expected_metric: hyp.expected_metric || null,
+              alzkb_source: hyp.alzkb_source || null,
+              feature_name: hyp.feature_name || null,
+              priority
+            });
+            insertedCount++;
+          } catch (insertErr) {
+            console.warn(`[${jobId}] Failed to insert one hypothesis:`, insertErr.message);
+          }
         }
 
-        console.log(`[${jobId}] Inserted ${hypotheses.length} hypotheses from next_hypothesis.json`);
+        console.log(`[${jobId}] Inserted ${insertedCount}/${hypotheses.length} hypotheses from next_hypothesis.json`);
 
         if (typeof onHypothesesExtracted === 'function') {
           onHypothesesExtracted({
             runId, jobId,
-            count: hypotheses.length,
+            count: insertedCount,
           });
         }
       } else {
