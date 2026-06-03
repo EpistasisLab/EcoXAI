@@ -153,9 +153,7 @@ function createJobFromData(data, index) {
   return {
     id: data.id || `J${Date.now()}_${index}`,
     title: data.title || `Uploaded Job ${index + 1}`,
-    priority: data.priority || 'Medium',
     status: 'todo',
-    assignee: null,
     prompt: data.prompt || '',
     datasetId: data.datasetId || null,
     selectedSkills: [],

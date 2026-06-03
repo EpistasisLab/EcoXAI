@@ -113,8 +113,8 @@ class ExecutionLogBuffer {
 
   async flush() {
     try {
-      if (this.model || this.sandboxId) {
-        await dbManager.updateRun(this.runId, { model: this.model, sandbox_id: this.sandboxId, permission_mode: this.permissionMode });
+      if (this.model) {
+        await dbManager.updateRun(this.runId, { model: this.model });
       }
       if (this.steps.length > 0) await dbManager.createStepsBatch(this.steps);
       if (this.toolCalls.length > 0) await dbManager.createToolCallsBatch(this.toolCalls);
@@ -182,6 +182,10 @@ class ContainerManager {
         } else {
           envVars.push(`DATASET_NORMALIZED=0`);
         }
+      }
+
+      if (selectedSkills && selectedSkills.length > 0) {
+        envVars.push(`SELECTED_SKILLS=${selectedSkills.join(',')}`);
       }
 
       if (process.env.CLAUDE_CODE_USE_FOUNDRY === '1') {

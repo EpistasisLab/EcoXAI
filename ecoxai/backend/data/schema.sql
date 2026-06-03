@@ -10,20 +10,17 @@ CREATE TABLE IF NOT EXISTS jobs (
     id TEXT PRIMARY KEY,
     title TEXT NOT NULL,
     prompt TEXT,
-    priority TEXT DEFAULT 'Medium',
     status TEXT DEFAULT 'todo',
-    assignee TEXT,
     dataset_id TEXT,
     output TEXT,
-    artifacts JSONB, -- JSON array of artifact filenames
+    artifacts JSONB,
     exit_code INTEGER,
     container_id TEXT,
     started_at TIMESTAMPTZ,
     completed_at TIMESTAMPTZ,
-    selected_skills JSONB, -- JSON array of skill names
-    recommended_skills JSONB, -- JSON array of skill names
-    skills_invoked JSONB, -- JSON array of skill names
-    metadata JSONB, -- Workflow metadata (_databaseId, _poolId, executionTarget, autoMode)
+    selected_skills JSONB,
+    skills_invoked JSONB,
+    metadata JSONB,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -31,7 +28,6 @@ CREATE TABLE IF NOT EXISTS jobs (
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
 CREATE INDEX IF NOT EXISTS idx_jobs_dataset_id ON jobs(dataset_id);
 CREATE INDEX IF NOT EXISTS idx_jobs_created_at ON jobs(created_at);
-CREATE INDEX IF NOT EXISTS idx_jobs_assignee ON jobs(assignee);
 
 -- Auto-update timestamp trigger for jobs
 CREATE OR REPLACE FUNCTION update_updated_at_column()
@@ -88,8 +84,6 @@ CREATE TABLE IF NOT EXISTS agent_runs (
     prompt TEXT NOT NULL,
     dataset_id TEXT,
     model TEXT,
-    sandbox_id TEXT,
-    permission_mode TEXT,
     started_at TIMESTAMPTZ NOT NULL,
     completed_at TIMESTAMPTZ,
     duration_ms INTEGER,
@@ -163,14 +157,10 @@ CREATE TABLE IF NOT EXISTS hypotheses (
     confidence_score REAL,
     extracted_at TIMESTAMPTZ NOT NULL,
     status TEXT DEFAULT 'pending',
-    requested_evidence_type TEXT,
-    requested_agent_action TEXT,
     evaluation_reasoning TEXT,
-    parent_hypothesis_id INTEGER REFERENCES hypotheses(hypothesis_id),
-    confidence_decay_rate REAL DEFAULT 0.0,
     expected_importance REAL,
     expected_metric TEXT,
-    alzkb_source TEXT,
+    graph_source TEXT,
     actual_importance REAL,
     feature_name TEXT,
     priority INTEGER DEFAULT 1000,
@@ -200,22 +190,6 @@ CREATE INDEX IF NOT EXISTS idx_hypothesis_evidence_hypothesis_id ON hypothesis_e
 CREATE INDEX IF NOT EXISTS idx_hypothesis_evidence_tool_call_id ON hypothesis_evidence(tool_call_id);
 
 -- Hypothesis edges: graph relationships between hypotheses
-CREATE TABLE IF NOT EXISTS hypothesis_edges (
-    edge_id SERIAL PRIMARY KEY,
-    from_hypothesis_id INTEGER NOT NULL,
-    to_hypothesis_id INTEGER NOT NULL,
-    edge_type TEXT NOT NULL,
-    reasoning TEXT,
-    confidence REAL DEFAULT 1.0,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    FOREIGN KEY (from_hypothesis_id) REFERENCES hypotheses(hypothesis_id) ON DELETE CASCADE,
-    FOREIGN KEY (to_hypothesis_id) REFERENCES hypotheses(hypothesis_id) ON DELETE CASCADE
-);
-
-CREATE INDEX IF NOT EXISTS idx_hypothesis_edges_from ON hypothesis_edges(from_hypothesis_id);
-CREATE INDEX IF NOT EXISTS idx_hypothesis_edges_to ON hypothesis_edges(to_hypothesis_id);
-CREATE INDEX IF NOT EXISTS idx_hypothesis_edges_type ON hypothesis_edges(edge_type);
-
 -- Database Registries: named data sources (SQL databases, graph DBs, APIs)
 CREATE TABLE IF NOT EXISTS database_registries (
     id TEXT PRIMARY KEY,
@@ -278,117 +252,3 @@ CREATE INDEX IF NOT EXISTS idx_feature_importance_dataset ON feature_importance_
 CREATE INDEX IF NOT EXISTS idx_feature_importance_feature ON feature_importance_results(feature_name);
 CREATE INDEX IF NOT EXISTS idx_feature_importance_score ON feature_importance_results(importance_score DESC);
 
--- ============================================================================
--- TEMPLATES AND AGENT MEMORIES
--- ============================================================================
-
--- Templates: task context definitions with skills and memory
-CREATE TABLE IF NOT EXISTS templates (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    description TEXT,
-    version TEXT DEFAULT '1.0.0',
-    skills JSONB DEFAULT '[]'::jsonb,
-    tags JSONB DEFAULT '[]'::jsonb,
-    agent_type JSONB,
-    memory_max_chars INTEGER DEFAULT 2200,
-    memory TEXT DEFAULT '',
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE INDEX IF NOT EXISTS idx_templates_name ON templates(name);
-CREATE INDEX IF NOT EXISTS idx_templates_updated_at ON templates(updated_at);
-
-DROP TRIGGER IF EXISTS templates_updated_at ON templates;
-CREATE TRIGGER templates_updated_at
-    BEFORE UPDATE ON templates
-    FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at_column();
-
--- Agent memories: persistent hot memory per named agent
-CREATE TABLE IF NOT EXISTS agent_memories (
-    agent_name TEXT PRIMARY KEY,
-    memory_content TEXT DEFAULT '',
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-DROP TRIGGER IF EXISTS agent_memories_updated_at ON agent_memories;
-CREATE TRIGGER agent_memories_updated_at
-    BEFORE UPDATE ON agent_memories
-    FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at_column();
-
--- ============================================================================
--- CHAT PERSISTENCE
--- ============================================================================
-
--- Conversations: named chat sessions per user
-CREATE TABLE IF NOT EXISTS conversations (
-    id TEXT PRIMARY KEY,
-    user_id TEXT NOT NULL DEFAULT 'default',
-    title TEXT,
-    is_pinned BOOLEAN NOT NULL DEFAULT FALSE,
-    is_archived BOOLEAN NOT NULL DEFAULT FALSE,
-    metadata JSONB DEFAULT '{}'::jsonb,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE INDEX IF NOT EXISTS idx_conversations_user_id ON conversations(user_id);
-CREATE INDEX IF NOT EXISTS idx_conversations_updated_at ON conversations(updated_at DESC);
-CREATE INDEX IF NOT EXISTS idx_conversations_is_pinned ON conversations(is_pinned);
-CREATE INDEX IF NOT EXISTS idx_conversations_is_archived ON conversations(is_archived);
-
-DROP TRIGGER IF EXISTS conversations_updated_at ON conversations;
-CREATE TRIGGER conversations_updated_at
-    BEFORE UPDATE ON conversations
-    FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at_column();
-
--- Messages: individual chat turns within a conversation
-CREATE TABLE IF NOT EXISTS chat_messages (
-    id TEXT PRIMARY KEY,
-    conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
-    role TEXT NOT NULL,
-    name TEXT NOT NULL,
-    color TEXT NOT NULL DEFAULT '#111827',
-    text TEXT NOT NULL,
-    message_type TEXT NOT NULL DEFAULT 'chat',
-    is_user BOOLEAN NOT NULL DEFAULT FALSE,
-    metadata JSONB DEFAULT '{}'::jsonb,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE INDEX IF NOT EXISTS idx_chat_messages_conversation_id ON chat_messages(conversation_id);
-CREATE INDEX IF NOT EXISTS idx_chat_messages_created_at ON chat_messages(created_at);
-CREATE INDEX IF NOT EXISTS idx_chat_messages_message_type ON chat_messages(message_type);
-
--- ============================================================================
--- ORCHESTRATOR / WORKFLOW ENGINE
--- ============================================================================
-
--- Key-value config store for orchestrator (pools, workflows, slurm defaults)
-CREATE TABLE IF NOT EXISTS orchestrator_config (
-    key TEXT PRIMARY KEY,
-    value TEXT NOT NULL,
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Workflow execution log entries
-CREATE TABLE IF NOT EXISTS workflow_logs (
-    id SERIAL PRIMARY KEY,
-    workflow_id TEXT NOT NULL,
-    workflow_name TEXT,
-    trigger_event TEXT NOT NULL,
-    trigger_payload JSONB,
-    actions_executed JSONB,
-    status TEXT DEFAULT 'running',
-    started_at TIMESTAMPTZ DEFAULT NOW(),
-    completed_at TIMESTAMPTZ,
-    error TEXT
-);
-
-CREATE INDEX IF NOT EXISTS idx_workflow_logs_workflow ON workflow_logs(workflow_id);
-CREATE INDEX IF NOT EXISTS idx_workflow_logs_status ON workflow_logs(status);

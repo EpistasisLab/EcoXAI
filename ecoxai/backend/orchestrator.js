@@ -144,9 +144,7 @@ class Orchestrator extends EventEmitter {
       const job = {
         id: `J${Date.now()}_${stage.id}`,
         title: `[Pipeline] ${stage.name}`,
-        priority: 'High',
         status: 'todo',
-        assignee: null,
         prompt,
         datasetId,
         selectedSkills: stage.skill ? [stage.skill] : [],

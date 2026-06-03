@@ -7,15 +7,13 @@ function createJobsRoutes({ state, saveState, broadcast, findJob, updateJob, cre
 
   router.post('/jobs', async (req, res) => {
     try {
-      const { title, prompt, datasetId, priority, testingHypothesisId } = req.body;
+      const { title, prompt, datasetId, testingHypothesisId } = req.body;
       if (!title) return res.status(400).json({ error: 'Title is required' });
 
       const newJob = {
         id: `J${Date.now()}`,
         title,
-        priority: priority || 'Medium',
         status: 'todo',
-        assignee: null,
         prompt: prompt || '',
         datasetId: datasetId || null,
         selectedSkills: [],

@@ -6,9 +6,8 @@ const fs = require('fs');
 
 // JSON columns auto-parsed when reading rows
 const JSON_COLS = new Set([
-  'artifacts', 'selected_skills', 'recommended_skills', 'skills_invoked', 'metadata',
-  'artifacts_json', 'trigger_payload', 'actions_executed', 'connection_info',
-  'skills', 'tags', 'agent_type', 'metadata_json'
+  'artifacts', 'selected_skills', 'skills_invoked', 'metadata',
+  'artifacts_json', 'connection_info', 'metadata_json'
 ]);
 
 function parseRow(row) {
@@ -44,6 +43,31 @@ class DatabaseManager {
       const schema = fs.readFileSync(schemaPath, 'utf8');
       this.db.exec(schema);
       console.log('Database schema initialized');
+
+      // Migrate alzkb_source → graph_source for existing databases
+      try {
+        this.db.exec('ALTER TABLE hypotheses RENAME COLUMN alzkb_source TO graph_source');
+        console.log('Migrated hypotheses.alzkb_source → graph_source');
+      } catch (_) { /* column already renamed or doesn't exist */ }
+
+      // Drop dead tables (idempotent)
+      this.db.exec('DROP TABLE IF EXISTS workflow_logs');
+      this.db.exec('DROP TABLE IF EXISTS chat_messages');
+      this.db.exec('DROP TABLE IF EXISTS conversations');
+      this.db.exec('DROP TABLE IF EXISTS orchestrator_config');
+      this.db.exec('DROP TABLE IF EXISTS agent_memories');
+      this.db.exec('DROP TABLE IF EXISTS templates');
+
+      // Drop dead columns (try/catch — older SQLite lacks IF EXISTS on DROP COLUMN)
+      try { this.db.exec('ALTER TABLE jobs DROP COLUMN assignee'); } catch (_) {}
+      try { this.db.exec('ALTER TABLE jobs DROP COLUMN recommended_skills'); } catch (_) {}
+      try { this.db.exec('ALTER TABLE jobs DROP COLUMN priority'); } catch (_) {}
+      try { this.db.exec('ALTER TABLE hypotheses DROP COLUMN confidence_decay_rate'); } catch (_) {}
+      try { this.db.exec('ALTER TABLE hypotheses DROP COLUMN requested_evidence_type'); } catch (_) {}
+      try { this.db.exec('ALTER TABLE hypotheses DROP COLUMN requested_agent_action'); } catch (_) {}
+      try { this.db.exec('ALTER TABLE hypotheses DROP COLUMN parent_hypothesis_id'); } catch (_) {}
+      try { this.db.exec('ALTER TABLE agent_runs DROP COLUMN sandbox_id'); } catch (_) {}
+      try { this.db.exec('ALTER TABLE agent_runs DROP COLUMN permission_mode'); } catch (_) {}
 
       return true;
     } catch (error) {
@@ -89,8 +113,7 @@ class DatabaseManager {
   async updateRun(runId, updates) {
     const allowedFields = [
       'completed_at', 'duration_ms', 'exit_code', 'status', 'error_message',
-      'total_cost_usd', 'num_turns', 'artifacts_json', 'skills_invoked',
-      'sandbox_id', 'permission_mode'
+      'total_cost_usd', 'num_turns', 'artifacts_json', 'skills_invoked', 'model'
     ];
 
     const fields = [];
@@ -248,32 +271,28 @@ class DatabaseManager {
       hypothesis_type = null, confidence_score = null,
       extracted_at = new Date().toISOString(),
       status = 'proposed',
-      requested_evidence_type = null, requested_agent_action = null,
-      evaluation_reasoning = null, parent_hypothesis_id = null,
-      confidence_decay_rate = 0.0, expected_importance = null,
-      expected_metric = null, alzkb_source = null,
+      evaluation_reasoning = null,
+      expected_importance = null,
+      expected_metric = null, graph_source = null,
       actual_importance = null, feature_name = null, priority = 1000
     } = data;
 
     const result = this._run(
       `INSERT INTO hypotheses (
          run_id, turn_number, hypothesis_text, hypothesis_type, confidence_score,
-         extracted_at, status, requested_evidence_type, requested_agent_action,
-         evaluation_reasoning, parent_hypothesis_id, confidence_decay_rate,
-         expected_importance, expected_metric, alzkb_source, actual_importance, feature_name, priority
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         extracted_at, status, evaluation_reasoning,
+         expected_importance, expected_metric, graph_source, actual_importance, feature_name, priority
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [run_id, turn_number, hypothesis_text, hypothesis_type, confidence_score,
-        extracted_at, status, requested_evidence_type, requested_agent_action,
-        evaluation_reasoning, parent_hypothesis_id, confidence_decay_rate,
-        expected_importance, expected_metric, alzkb_source, actual_importance, feature_name, priority]
+        extracted_at, status, evaluation_reasoning,
+        expected_importance, expected_metric, graph_source, actual_importance, feature_name, priority]
     );
     return result.lastID;
   }
 
   async updateHypothesis(hypothesisId, updates) {
     const allowedFields = [
-      'status', 'confidence_score', 'requested_evidence_type', 'requested_agent_action',
-      'evaluation_reasoning', 'confidence_decay_rate', 'priority',
+      'status', 'confidence_score', 'evaluation_reasoning', 'priority',
       'actual_importance', 'feature_name'
     ];
 
@@ -580,77 +599,6 @@ class DatabaseManager {
     );
   }
 
-  // ==================== Templates ====================
-
-  async getAllTemplates() {
-    if (!this.db) return [];
-    return this._all('SELECT * FROM templates ORDER BY name');
-  }
-
-  async getTemplate(id) {
-    return this._get('SELECT * FROM templates WHERE id = ?', [id]);
-  }
-
-  async upsertTemplate({ id, name, description, version, skills, tags, agentType, memoryMaxChars, memory }) {
-    this._run(
-      `INSERT INTO templates (id, name, description, version, skills, tags, agent_type, memory_max_chars, memory)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT (id) DO UPDATE SET
-         name = excluded.name,
-         description = excluded.description,
-         version = excluded.version,
-         skills = excluded.skills,
-         tags = excluded.tags,
-         agent_type = excluded.agent_type,
-         memory_max_chars = excluded.memory_max_chars,
-         memory = excluded.memory,
-         updated_at = datetime('now')`,
-      [id, name, description, version || '1.0.0',
-        JSON.stringify(skills || []),
-        JSON.stringify(tags || []),
-        agentType ? JSON.stringify(agentType) : null,
-        memoryMaxChars || 2200,
-        memory || '']
-    );
-    return this.getTemplate(id);
-  }
-
-  async updateTemplateMemory(id, memory) {
-    this._run(
-      "UPDATE templates SET memory = ?, updated_at = datetime('now') WHERE id = ?",
-      [memory, id]
-    );
-    return this.getTemplate(id);
-  }
-
-  async deleteTemplate(id) {
-    this._run('DELETE FROM templates WHERE id = ?', [id]);
-  }
-
-  // ==================== Agent Memories ====================
-
-  async getAgentMemory(agentName) {
-    if (!this.db) return '';
-    const row = this._get('SELECT memory_content FROM agent_memories WHERE agent_name = ?', [agentName]);
-    return row?.memory_content || '';
-  }
-
-  async upsertAgentMemory(agentName, content) {
-    this._run(
-      `INSERT INTO agent_memories (agent_name, memory_content)
-       VALUES (?, ?)
-       ON CONFLICT (agent_name) DO UPDATE SET
-         memory_content = excluded.memory_content,
-         updated_at = datetime('now')`,
-      [agentName, content]
-    );
-  }
-
-  async listAgentNames() {
-    if (!this.db) return [];
-    return this._all('SELECT agent_name FROM agent_memories ORDER BY agent_name')
-      .map(r => r.agent_name);
-  }
 }
 
 const dbManager = new DatabaseManager();

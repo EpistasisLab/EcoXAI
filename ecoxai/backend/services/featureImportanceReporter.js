@@ -91,8 +91,8 @@ function generateMarkdownReport(features, threshold, datasetId) {
       lines.push(`**Expected Metric:** ${feature.expected_metric}`);
     }
 
-    if (feature.alzkb_source) {
-      lines.push(`**Source:** ${feature.alzkb_source}`);
+    if (feature.graph_source) {
+      lines.push(`**Source:** ${feature.graph_source}`);
     }
 
     if (feature.confidence_score) {
@@ -132,7 +132,7 @@ function generateJSONOutput(features) {
       type: feature.hypothesis_type,
       status: feature.status,
       expected_metric: feature.expected_metric,
-      alzkb_source: feature.alzkb_source,
+      graph_source: feature.graph_source,
       confidence: feature.confidence_score,
       hypothesis_id: feature.hypothesis_id
     }))

@@ -131,16 +131,16 @@ class HypothesisAgent {
 Your task is to extract FEATURE IMPORTANCE HYPOTHESES and MODEL BUILDING INSIGHTS from the agent's outputs (reports, analysis files) and reasoning trace.
 
 ${isGenomicDataset ? `**GENOMIC DATASET MODE - CRITICAL INSTRUCTIONS:**
-1. **Primary Source**: Query alzkb ai for disease-associated genes, pathways, and known biomarkers
+1. **Primary Source**: Use the alzkb-graph-query skill to query the knowledge graph for disease-associated genes, pathways, and known biomarkers
 2. **Feature Hypotheses**: Frame discoveries as "Feature X will have importance > Y in predicting outcome Z"
 3. **Multi-hop Reasoning**: Build on previous findings (e.g., "Gene A → Pathway B → Disease C")
 4. **Model Performance**: Extract feature importance scores, model metrics, predictive features
-5. **Creative Extensions**: Suggest interaction terms, pathway aggregations, or composite features based on alzkb ai knowledge
+5. **Creative Extensions**: Suggest interaction terms, pathway aggregations, or composite features based on knowledge graph findings
 
 Example hypotheses:
-- "APOE gene variants will have feature importance > 0.15 in Alzheimer's risk prediction (alzkb ai: APOE ε4 allele strongest genetic risk factor)"
-- "Amyloid-beta pathway genes (APP, PSEN1, PSEN2) aggregated will improve model AUC by > 0.05 (alzkb ai: amyloid cascade hypothesis)"
-- "Interaction term APOE*MAPT will have importance > 0.10 due to converging tau pathology (alzkb ai multihop: APOE → inflammation → tau phosphorylation)"
+- "APOE gene variants will have feature importance > 0.15 in Alzheimer's risk prediction (knowledge graph: APOE ε4 allele strongest genetic risk factor)"
+- "Amyloid-beta pathway genes (APP, PSEN1, PSEN2) aggregated will improve model AUC by > 0.05 (knowledge graph: amyloid cascade hypothesis)"
+- "Interaction term APOE*MAPT will have importance > 0.10 due to converging tau pathology (knowledge graph multihop: APOE → inflammation → tau phosphorylation)"
 ` : `**MODEL BUILDING MODE:**
 1. **Primary Source**: Extract feature importance scores, model performance metrics from outputs
 2. **Feature Hypotheses**: Frame discoveries as "Feature X will have importance > Y in predicting outcome Z"
@@ -166,7 +166,7 @@ Return ONLY a JSON object with this structure:
       "confidence_score": 0.0-1.0,
       "expected_importance": 0.0-1.0 or null,
       "expected_metric": "AUC > 0.8" or "importance > 0.15" or null,
-      "alzkb_source": "Gene-disease association from alzkb ai" or null,
+      "graph_source": "Gene-disease association from knowledge graph" or null,
       "turn_number": <integer>
     }
   ],
@@ -273,7 +273,7 @@ Extract falsifiable hypotheses from ${artifactContents.length > 0 ? 'the generat
           status: 'proposed',
           expected_importance: hyp.expected_importance || null,
           expected_metric: hyp.expected_metric || null,
-          alzkb_source: hyp.alzkb_source || null,
+          graph_source: hyp.graph_source || null,
           feature_name: extractFeatureName(hyp.hypothesis_text),
           priority: priority
         });
@@ -336,7 +336,7 @@ The experiment must be:
 1. SPECIFIC - clear steps an execution agent can perform
 2. FEASIBLE - can be done with available tools (Read, Bash, Write)
 3. OBJECTIVE - produces measurable results
-4. DECISIVE - helps determine if hypothesis is true or false${isGenomicDataset ? '\n5. **For genomic hypotheses**: Leverage alzkb ai knowledge base for gene-disease associations, pathway information, and molecular mechanisms' : ''}
+4. DECISIVE - helps determine if hypothesis is true or false${isGenomicDataset ? '\n5. **For genomic hypotheses**: Use the alzkb-graph-query skill to query the knowledge graph for gene-disease associations, pathway information, and molecular mechanisms' : ''}
 
 Return ONLY a JSON object with this structure:
 {
@@ -767,7 +767,7 @@ Propose a revised hypothesis that addresses these issues.`;
       // Build weighted focus instructions
       let focusInstructions = '';
       if (config.featureImportance === 100) {
-        focusInstructions = 'Your focus should be 100% on feature importance testing (testing individual features from alzkb ai or dataset).';
+        focusInstructions = 'Your focus should be 100% on feature importance testing (testing individual features from the knowledge graph or dataset).';
       } else if (config.featureEngineering === 100) {
         focusInstructions = 'Your focus should be 100% on creative feature engineering (interaction terms, aggregations, transformations).';
       } else {
@@ -783,21 +783,21 @@ Your task is to suggest the NEXT FEATURE to investigate for model building based
 
 **HYPOTHESIS GENERATION STRATEGY:** ${focusInstructions}
 
-${isGenomicDataset ? `**GENOMIC DATASET - ALZKB AI WORKFLOW:**
+${isGenomicDataset ? `**GENOMIC DATASET - KNOWLEDGE GRAPH WORKFLOW:**
 
 ${config.featureImportance > 0 ? `**FEATURE IMPORTANCE FOCUS (${config.featureImportance}%):**
-1. **First Pass (if no features tested yet)**: Query alzkb ai for ALL genes associated with the target disease
-   - Example: "Query alzkb ai: Get all genes associated with Alzheimer's disease"
+1. **First Pass (if no features tested yet)**: Use the alzkb-graph-query skill to get ALL genes associated with the target disease
+   - Example: invoke alzkb-graph-query to get all genes associated with Alzheimer's disease
    - Expected: List of 20-50 genes (APOE, APP, PSEN1, PSEN2, MAPT, TREM2, etc.)
-   - Hypothesis: "Feature set of alzkb ai Alzheimer's genes will achieve AUC > 0.75"
+   - Hypothesis: "Feature set of knowledge graph Alzheimer's genes will achieve AUC > 0.75"
 
-2. **Multi-hop Reasoning (after first pass)**: Use alzkb ai to explore related pathways
-   - Example: "Query alzkb ai: Get genes in amyloid-beta processing pathway"
-   - Example: "Query alzkb ai: Get genes that interact with APOE"
+2. **Multi-hop Reasoning (after first pass)**: Use the alzkb-graph-query skill to explore related pathways
+   - Example: invoke alzkb-graph-query to get genes in the amyloid-beta processing pathway
+   - Example: invoke alzkb-graph-query to get genes that interact with APOE
    - Test individual genes from pathways
 
 ` : ''}${config.featureEngineering > 0 ? `**FEATURE ENGINEERING FOCUS (${config.featureEngineering}%):**
-1. **Interaction Terms**: Gene-gene interactions based on alzkb ai knowledge
+1. **Interaction Terms**: Gene-gene interactions based on knowledge graph findings
    - APOE*MAPT (converging pathology pathways)
    - APP*PSEN1 (amyloid processing cascade)
 
@@ -811,13 +811,13 @@ ${config.featureImportance > 0 ? `**FEATURE IMPORTANCE FOCUS (${config.featureIm
 
 ` : ''}**Expected Format:**
 {
-  "hypothesis_text": "Feature '[GENE_NAME or COMPOSITE]' from alzkb ai [disease] association will have importance > [threshold]",
+  "hypothesis_text": "Feature '[GENE_NAME or COMPOSITE]' from knowledge graph [disease] association will have importance > [threshold]",
   "hypothesis_type": "feature_importance" | "feature_engineering" | "model_performance",
   "confidence_score": 0.0-1.0,
   "expected_importance": 0.0-1.0,
   "expected_metric": "importance > 0.15" or "AUC > 0.75",
-  "alzkb_source": "alzkb ai: GENE → DISEASE association" or "alzkb ai: PATHWAY analysis",
-  "reasoning": "why this feature matters (alzkb ai evidence + ML rationale)",
+  "graph_source": "knowledge graph: GENE → DISEASE association" or "knowledge graph: PATHWAY analysis",
+  "reasoning": "why this feature matters (knowledge graph evidence + ML rationale)",
   "builds_on": "hypothesis_id or null",
   "explores": "specific gene/pathway/interaction"
 }` : `**MODEL BUILDING MODE:**
@@ -870,7 +870,7 @@ Return a JSON object with the structure above.`;
       ).join('\n  ');
 
       const userPrompt = `Dataset Context:
-- Domain: ${datasetContext.domain}${isGenomicDataset ? ' **→ USE ALZKB AI FOR FEATURE DISCOVERY**' : ''}
+- Domain: ${datasetContext.domain}${isGenomicDataset ? ' **→ USE KNOWLEDGE GRAPH SKILL FOR FEATURE DISCOVERY**' : ''}
 - Available Entities/Columns: ${datasetContext.entities.join(', ') || 'Unknown'}
 - Data Quality Confidence: ${datasetContext.confidence}
 - Document Type: ${datasetContext.documentType}
@@ -878,11 +878,11 @@ Return a JSON object with the structure above.`;
 ${isGenomicDataset && totalHypotheses === 0 ? `
 **FIRST PASS REQUIRED:**
 This is the FIRST hypothesis for this genomic dataset. You MUST:
-1. Query alzkb ai for ALL genes associated with the target disease (infer from entities: ${datasetContext.entities.join(', ')})
+1. Use the alzkb-graph-query skill to get ALL genes associated with the target disease (infer from entities: ${datasetContext.entities.join(', ')})
 2. Suggest testing ALL returned genes as a feature set
-3. Expected format: "alzkb ai query: [disease] associated genes → Feature set of [N] genes will achieve AUC > [threshold]"
+3. Expected format: "knowledge graph query: [disease] associated genes → Feature set of [N] genes will achieve AUC > [threshold]"
 
-Do NOT suggest individual genes yet. Start with the comprehensive alzkb ai gene list.
+Do NOT suggest individual genes yet. Start with the comprehensive knowledge graph gene list.
 ` : ''}
 
 Feature Discovery History:
@@ -897,14 +897,14 @@ Feature Discovery History:
 
 **PENDING/PROPOSED FEATURES (DO NOT DUPLICATE - ${pendingHypotheses.length})**:
 ${pendingHypotheses.length > 0 ? pendingHypotheses.map((h, i) =>
-  `${i + 1}. ${h.feature_name || 'Unknown'}: ${h.hypothesis_text}${h.alzkb_source ? ` (${h.alzkb_source})` : ''}`
+  `${i + 1}. ${h.feature_name || 'Unknown'}: ${h.hypothesis_text}${h.graph_source ? ` (${h.graph_source})` : ''}`
 ).join('\n') : 'None'}
 
 ${isGenomicDataset ? `
-**ALZKB AI STRATEGY:**
-- If FIRST hypothesis: Query alzkb ai for comprehensive disease gene list
-- If genes tested: Query alzkb ai for pathway information, gene interactions
-- If pathways explored: Suggest creative composite features based on alzkb ai knowledge
+**KNOWLEDGE GRAPH STRATEGY:**
+- If FIRST hypothesis: Use alzkb-graph-query skill for comprehensive disease gene list
+- If genes tested: Use alzkb-graph-query skill for pathway information, gene interactions
+- If pathways explored: Suggest creative composite features based on knowledge graph findings
 ` : ''}
 
 Based on this context, suggest the NEXT FEATURE to test that is NOT already pending.`;
@@ -1229,7 +1229,7 @@ Based on this context, suggest the NEXT FEATURE to test that is NOT already pend
     if (config.featureImportance > 0) {
       skills.push('hypothesis:model-feature-importance');
       if (isGenomicDataset) {
-        skills.push('hypothesis:alzkb-feature-discovery');
+        skills.push('sources:alzkb-graph-query');
       }
     }
 

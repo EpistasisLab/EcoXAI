@@ -72,7 +72,7 @@ async function processJobCompletion({
             status: 'proposed',
             expected_importance: hyp.expected_importance || null,
             expected_metric: hyp.expected_metric || null,
-            alzkb_source: hyp.alzkb_source || null,
+            graph_source: hyp.graph_source || null,
             feature_name: hyp.feature_name || null,
             priority
           });
