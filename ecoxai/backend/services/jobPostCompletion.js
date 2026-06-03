@@ -334,13 +334,12 @@ function findArtifactByName(artifacts, filename) {
  * @param {Object} opts.job - The job object
  * @param {Array}  opts.artifacts - Collected artifacts
  * @param {number} opts.exitCode
- * @param {Object} opts.storageService
  * @param {Object} opts.state - Global state
  * @param {Function} [opts.onHypothesesExtracted] - Callback for hypothesis extraction events
  */
 async function processJobCompletion({
   jobId, runId, job, artifacts, exitCode,
-  storageService, state, onHypothesesExtracted
+  state, onHypothesesExtracted
 }) {
   if (exitCode !== 0) return;
 

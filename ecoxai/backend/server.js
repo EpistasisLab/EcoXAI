@@ -185,7 +185,6 @@ const routeDeps = {
   normalizationService,
   upload,
   orchestrator,
-  stateRepo: () => null  // lean version: no PostgreSQL stateRepo
 };
 
 routeDeps.startJobExecution = (jobId, opts) =>

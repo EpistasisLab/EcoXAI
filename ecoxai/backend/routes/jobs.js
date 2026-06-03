@@ -3,7 +3,7 @@
 const express = require('express');
 const router = express.Router();
 
-function createJobsRoutes({ state, saveState, broadcast, findJob, updateJob, createJobFromData, containerManager, volumeManager, dbManager, upload, startJobExecution }) {
+function createJobsRoutes({ state, saveState, broadcast, findJob, updateJob, containerManager, volumeManager, dbManager, startJobExecution }) {
 
   router.post('/jobs', async (req, res) => {
     try {

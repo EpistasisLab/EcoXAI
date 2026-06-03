@@ -18,7 +18,6 @@ const attachHypothesisReportingRoutes = require('./hypotheses/reporting');
  * @param {Function} deps.broadcast - WebSocket broadcast function
  * @param {Object} deps.dbManager - Database manager service
  * @param {Object} deps.volumeManager - Volume manager service
- * @param {Function} deps.stateRepo - Function to get state repository instance
  */
 function createHypothesesRoutes({ state, saveState, broadcast, dbManager, volumeManager }) {
   const router = express.Router();
