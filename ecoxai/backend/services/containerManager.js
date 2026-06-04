@@ -14,7 +14,7 @@ function formatClaudeOutput(json) {
   switch (type) {
     case 'system':
       if (subtype === 'init') {
-        displayText = `\n━━━ Agent Session Initialized ━━━\nModel: ${json.model}\nPermission Mode: ${json.permissionMode}\n`;
+        displayText = `\n━━━ Agent Session Initialized ━━━\nModel: ${json.model}\n`;
         logData = { type: 'init', model: json.model, permissionMode: json.permissionMode, sandboxId: json.sandboxId };
       }
       break;

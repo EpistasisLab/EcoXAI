@@ -43,7 +43,12 @@ const PIPELINE_STAGES = [
     trigger: 'hypotheses_extracted',
     auto: true,
     skill: 'public:pipeline-analyze',
-    prompt: 'Run the combined hypothesis testing and validation phase. Follow the pipeline-analyze skill instructions in your workspace.',
+    prompt: `Run the hypothesis testing and validation phase for this specific hypothesis.
+
+**Hypothesis:**
+{hypothesis_json}
+
+Focus ONLY on this single hypothesis. Follow the pipeline-analyze skill instructions in your workspace.`,
   }
 ];
 // ═══════════════════════════════════════════════════════
@@ -53,6 +58,7 @@ class Orchestrator extends EventEmitter {
     super();
     this.autoMode = true;
     this.activeStages = new Map(); // datasetId -> { stageId, jobId, startedAt }
+    this.hypothesisQueues = new Map(); // datasetId -> hypothesis[]
     this.deps = null;
   }
 
@@ -93,22 +99,43 @@ class Orchestrator extends EventEmitter {
         console.warn(`[Orchestrator] Stage ${stageId} exited ${exitCode} but produced ${artifacts.length} artifact(s) — treating as completed`);
       }
 
-      // Feed test results back to hypothesis statuses
+      // Feed test results back to hypothesis statuses and advance per-hypothesis queue
       if (stageId === 'analyze') {
-        this._processTestResults(datasetId, artifacts).catch(err =>
+        const job = (this.deps.state.jobs || []).find(j => j.id === jobId);
+        this._processTestResults(datasetId, artifacts, job?._hypothesisId).catch(err =>
           console.warn('[Orchestrator] Verdict processing failed:', err.message)
         );
+        await this._runNextHypothesisAnalysis(datasetId);
+        return; // analyze doesn't advance to a further stage
       }
 
       // Trigger next stage based on completed stage
       await this._maybeAdvance(`job_completed:${stageId}`, { datasetId, jobId });
     });
 
-    // When hypotheses are extracted → trigger test stage
+    // When hypotheses are extracted → run one analyze job per hypothesis, sequentially
     this.on('hypotheses_extracted', async ({ jobId, datasetId, count }) => {
       console.log(`[Orchestrator] hypotheses_extracted: ${count} for dataset ${datasetId}`);
-      await this._maybeAdvance('hypotheses_extracted', { datasetId });
+      const { dbManager } = this.deps;
+      if (!dbManager) return;
+      const hypotheses = await dbManager.getHypothesesForDataset(datasetId);
+      if (!hypotheses.length) return;
+      this.hypothesisQueues.set(datasetId, [...hypotheses]);
+      await this._runNextHypothesisAnalysis(datasetId);
     });
+  }
+
+  async _runNextHypothesisAnalysis(datasetId) {
+    const queue = this.hypothesisQueues.get(datasetId);
+    if (!queue || !queue.length) {
+      this.hypothesisQueues.delete(datasetId);
+      console.log(`[Orchestrator] All hypotheses tested for dataset ${datasetId}`);
+      return;
+    }
+    const hypothesis = queue.shift();
+    const stage = PIPELINE_STAGES.find(s => s.id === 'analyze');
+    console.log(`[Orchestrator] Testing hypothesis ${hypothesis.hypothesis_id} (${queue.length} remaining) for dataset ${datasetId}`);
+    await this._runStage(stage, { datasetId, hypothesis });
   }
 
   async _maybeAdvance(trigger, context) {
@@ -135,13 +162,21 @@ class Orchestrator extends EventEmitter {
     try {
       const { state, saveState, broadcast, findJob, updateJob, startJobExecution } = this.deps;
 
-      // Build prompt with dataset substitution
-      const prompt = stage.prompt.replace(/\{datasetId\}/g, datasetId);
+      // Build prompt with dataset and hypothesis substitution
+      const { hypothesis } = context;
+      let prompt = stage.prompt.replace(/\{datasetId\}/g, datasetId);
+      if (hypothesis) {
+        prompt = prompt.replace(/\{hypothesis_json\}/g, JSON.stringify(hypothesis, null, 2));
+      }
+
+      const jobTitle = hypothesis?.feature_name
+        ? `[Pipeline] ${stage.name}: ${hypothesis.feature_name}`
+        : `[Pipeline] ${stage.name}`;
 
       // Create job
       const job = {
         id: `J${Date.now()}_${stage.id}`,
-        title: `[Pipeline] ${stage.name}`,
+        title: jobTitle,
         status: 'todo',
         prompt,
         datasetId,
@@ -154,7 +189,8 @@ class Orchestrator extends EventEmitter {
         completedAt: null,
         createdAt: new Date().toISOString(),
         _stageId: stage.id,   // Tag so jobExecution can emit the right event
-        _pipelineDatasetId: datasetId
+        _pipelineDatasetId: datasetId,
+        _hypothesisId: hypothesis?.hypothesis_id ?? null,
       };
 
       state.jobs.push(job);
@@ -238,7 +274,7 @@ class Orchestrator extends EventEmitter {
     };
   }
 
-  async _processTestResults(datasetId, artifacts) {
+  async _processTestResults(datasetId, artifacts, hypothesisId = null) {
     const { dbManager, broadcast } = this.deps;
     if (!dbManager) return;
 
@@ -255,7 +291,10 @@ class Orchestrator extends EventEmitter {
         if (item.feature && item.importance != null) importanceByFeature[item.feature] = item.importance;
       }
 
-      const hypotheses = await dbManager.getHypothesesForDataset(datasetId);
+      const allHypotheses = await dbManager.getHypothesesForDataset(datasetId);
+      const hypotheses = hypothesisId
+        ? allHypotheses.filter(h => h.hypothesis_id === hypothesisId)
+        : allHypotheses;
       let updated = 0;
       for (const hyp of hypotheses) {
         if (!hyp.feature_name) continue;

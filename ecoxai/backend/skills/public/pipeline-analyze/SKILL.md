@@ -35,13 +35,25 @@ import os
 # Load cleaned data from explore phase
 df = pd.read_csv('/workspace/output/cleaned_data.csv')
 
-# Load hypotheses from hypothesize phase
+# Load hypothesis — prefer single hypothesis injected in TASK, fall back to next_hypothesis.json
 hypotheses = []
-hyp_path = '/workspace/output/next_hypothesis.json'
-if os.path.exists(hyp_path):
-    with open(hyp_path) as f:
-        hyp_data = json.load(f)
-    hypotheses = hyp_data.get('hypotheses', [])
+task_content = os.environ.get('TASK', '')
+try:
+    marker = '**Hypothesis:**'
+    if marker in task_content:
+        raw = task_content.split(marker, 1)[1].strip()
+        start = raw.index('{')
+        hyp = json.loads(raw[start:raw.rindex('}')+1])
+        hypotheses = [hyp]
+except Exception:
+    pass
+
+if not hypotheses:
+    hyp_path = '/workspace/output/next_hypothesis.json'
+    if os.path.exists(hyp_path):
+        with open(hyp_path) as f:
+            hyp_data = json.load(f)
+        hypotheses = hyp_data.get('hypotheses', [])
 
 print(f"Loaded {df.shape[0]} rows × {df.shape[1]} columns, {len(hypotheses)} hypotheses")
 ```
