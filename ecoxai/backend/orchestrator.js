@@ -52,7 +52,6 @@ class Orchestrator extends EventEmitter {
   constructor() {
     super();
     this.autoMode = true;
-    this.stageHistory = []; // { stageId, datasetId, status, jobId, startedAt, completedAt }
     this.activeStages = new Map(); // datasetId -> { stageId, jobId, startedAt }
     this.deps = null;
   }
@@ -71,7 +70,6 @@ class Orchestrator extends EventEmitter {
     // When a dataset is uploaded → trigger normalize (noJob) then explore
     this.on('dataset_uploaded', async ({ datasetId, filename, domain }) => {
       console.log(`[Orchestrator] dataset_uploaded: ${datasetId} (${domain})`);
-      this._recordStage('normalize', datasetId, 'completed');
       this._broadcastStageUpdate('normalize', 'Normalize Dataset', 'completed', null, datasetId);
 
       // Auto-trigger explore
@@ -154,7 +152,6 @@ class Orchestrator extends EventEmitter {
         exitCode: null,
         startedAt: null,
         completedAt: null,
-        containerId: null,
         createdAt: new Date().toISOString(),
         _stageId: stage.id,   // Tag so jobExecution can emit the right event
         _pipelineDatasetId: datasetId
@@ -237,7 +234,6 @@ class Orchestrator extends EventEmitter {
         noJob: s.noJob || false,
         skill: s.skill || null,
       })),
-      history: this.stageHistory.slice(-50),
       active: Array.from(this.activeStages.entries()).map(([datasetId, info]) => ({ datasetId, ...info }))
     };
   }
@@ -288,10 +284,6 @@ class Orchestrator extends EventEmitter {
     return PIPELINE_STAGES.find(s => s.id === stageId)?.name || stageId;
   }
 
-  _recordStage(stageId, datasetId, status, jobId = null) {
-    this.stageHistory.push({ stageId, datasetId, status, jobId, timestamp: new Date().toISOString() });
-  }
-
   _recordActiveStage(stageId, datasetId, jobId) {
     this.activeStages.set(datasetId, { stageId, jobId, startedAt: new Date().toISOString() });
   }
@@ -299,7 +291,6 @@ class Orchestrator extends EventEmitter {
   _updateActiveStage(datasetId, status, jobId) {
     const active = this.activeStages.get(datasetId);
     if (active) {
-      this._recordStage(active.stageId, datasetId, status, jobId);
       if (status !== 'running') this.activeStages.delete(datasetId);
     }
   }

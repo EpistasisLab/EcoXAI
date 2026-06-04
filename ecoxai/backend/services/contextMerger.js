@@ -225,9 +225,5 @@ function mergeCustomContext(autoNormalized, customContext, mergeStrategy = 'supp
 }
 
 module.exports = {
-  mergeCustomContext,
-  validateContext,
-  deepMerge,
-  mergeArrays,
-  trackOverrides
+  mergeCustomContext
 };

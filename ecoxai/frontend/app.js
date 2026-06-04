@@ -40,7 +40,7 @@ const state = {
   hypDetailAsset: null,
   selectedAssetFile: null,
   selectedDetailTab: 'logs',
-  serverBudget: { totalCostUsd: 0, jobCount: 0, sessions: [] },
+  serverBudget: { totalCostUsd: 0, jobCount: 0 },
   serverSettings: { budgetLimitUsd: 10 },
 };
 

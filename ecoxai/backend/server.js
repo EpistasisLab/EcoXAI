@@ -19,7 +19,6 @@ const jobExecution = require('./services/jobExecution');
 const createDatasetsRoutes = require('./routes/datasets');
 const createJobsRoutes = require('./routes/jobs');
 const createHypothesesRoutes = require('./routes/hypotheses');
-const createObservabilityRoutes = require('./routes/observability');
 const createPipelineRoutes = require('./routes/pipeline');
 
 // ── Error handling ────────────────────────────────────────────────────────────
@@ -68,7 +67,7 @@ function loadState() {
       if (loaded.jobs) {
         loaded.jobs = loaded.jobs.map(j => ({ ...j, selectedSkills: j.selectedSkills || [], skillsInvoked: j.skillsInvoked || [] }));
       }
-      loaded.budget = loaded.budget || { totalCostUsd: 0, jobCount: 0, sessions: [] };
+      loaded.budget = loaded.budget || { totalCostUsd: 0, jobCount: 0 };
       loaded.settings = loaded.settings || { budgetLimitUsd: 10 };
       console.log(`Loaded state: ${loaded.jobs?.length || 0} jobs, ${Object.keys(loaded.datasets || {}).length} datasets`);
       return loaded;
@@ -76,7 +75,7 @@ function loadState() {
   } catch (error) {
     console.error('Failed to load state:', error.message);
   }
-  return { jobs: [], datasets: {}, budget: { totalCostUsd: 0, jobCount: 0, sessions: [] }, settings: { budgetLimitUsd: 10 } };
+  return { jobs: [], datasets: {}, budget: { totalCostUsd: 0, jobCount: 0 }, settings: { budgetLimitUsd: 10 } };
 }
 
 let state = loadState();
@@ -98,7 +97,7 @@ wss.on('connection', (ws) => {
     jobs: state.jobs,
     datasets: Object.values(state.datasets),
     pipeline: orchestrator.getStatus(),
-    budget: state.budget || { totalCostUsd: 0, jobCount: 0, sessions: [] },
+    budget: state.budget || { totalCostUsd: 0, jobCount: 0 },
     settings: state.settings || { budgetLimitUsd: 10 },
   }));
   ws.on('close', () => clients.delete(ws));
@@ -163,7 +162,6 @@ function createJobFromData(data, index) {
     exitCode: null,
     startedAt: null,
     completedAt: null,
-    containerId: null,
     createdAt: new Date().toISOString()
   };
 }
@@ -205,7 +203,6 @@ orchestrator.init({
 app.use('/api', createDatasetsRoutes(routeDeps));
 app.use('/api', createJobsRoutes(routeDeps));
 app.use('/api', createHypothesesRoutes(routeDeps));
-app.use('/api', createObservabilityRoutes({ dbManager }));
 app.use('/api', createPipelineRoutes({ orchestrator }));
 
 // Health check
@@ -216,11 +213,11 @@ app.get('/api/health', async (req, res) => {
 
 // Budget
 app.get('/api/budget', (req, res) => {
-  res.json({ success: true, budget: state.budget || { totalCostUsd: 0, jobCount: 0, sessions: [] } });
+  res.json({ success: true, budget: state.budget || { totalCostUsd: 0, jobCount: 0 } });
 });
 
 app.post('/api/budget/reset', (req, res) => {
-  state.budget = { totalCostUsd: 0, jobCount: 0, sessions: [] };
+  state.budget = { totalCostUsd: 0, jobCount: 0 };
   saveState();
   broadcast({ type: 'BUDGET_UPDATE', budget: state.budget });
   res.json({ success: true, budget: state.budget });

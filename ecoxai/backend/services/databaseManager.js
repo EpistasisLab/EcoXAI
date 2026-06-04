@@ -88,11 +88,6 @@ class DatabaseManager {
     }
   }
 
-  async query(sql, params = []) {
-    if (!this.db) throw new Error('Database not initialized');
-    return this.db.prepare(sql).all(...params).map(parseRow);
-  }
-
   // ==================== Run Management ====================
 
   async createRun(data) {
@@ -152,25 +147,6 @@ class DatabaseManager {
 
   // ==================== Step Management ====================
 
-  async createStep(data) {
-    const {
-      run_id, step_number, step_type,
-      input = null, output = null,
-      started_at = new Date().toISOString(),
-      completed_at = null, duration_ms = null,
-      success = true, error_message = null, metadata_json = null
-    } = data;
-
-    const result = this._run(
-      `INSERT INTO agent_steps (run_id, step_number, step_type, input, output,
-         started_at, completed_at, duration_ms, success, error_message, metadata_json)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [run_id, step_number, step_type, input, output,
-        started_at, completed_at, duration_ms, success ? 1 : 0, error_message, metadata_json]
-    );
-    return result.lastID;
-  }
-
   async createStepsBatch(steps) {
     if (steps.length === 0 || !this.db) return;
 
@@ -206,25 +182,6 @@ class DatabaseManager {
   }
 
   // ==================== Tool Call Management ====================
-
-  async createToolCall(data) {
-    const {
-      run_id, turn_number, tool_id, tool_name,
-      arguments_json = null, result_json = null,
-      started_at = new Date().toISOString(),
-      completed_at = null, duration_ms = null,
-      success = true, error_message = null
-    } = data;
-
-    const result = this._run(
-      `INSERT INTO tool_calls (run_id, turn_number, tool_id, tool_name, arguments_json, result_json,
-         started_at, completed_at, duration_ms, success, error_message)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [run_id, turn_number, tool_id, tool_name, arguments_json, result_json,
-        started_at, completed_at, duration_ms, success ? 1 : 0, error_message]
-    );
-    return result.lastID;
-  }
 
   async createToolCallsBatch(toolCalls) {
     if (toolCalls.length === 0 || !this.db) return;
@@ -368,28 +325,6 @@ class DatabaseManager {
     return result.lastID;
   }
 
-  async createEvidenceBatch(evidenceList) {
-    if (evidenceList.length === 0 || !this.db) return;
-
-    const stmt = this.db.prepare(
-      `INSERT INTO hypothesis_evidence (hypothesis_id, tool_call_id, evidence_type, evidence_text,
-         supports, confidence_score, linked_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
-    );
-
-    this.db.transaction((items) => {
-      for (const e of items) {
-        const {
-          hypothesis_id, tool_call_id = null, evidence_type,
-          evidence_text = null, supports = true, confidence_score = null,
-          linked_at = new Date().toISOString()
-        } = e;
-        stmt.run(hypothesis_id, tool_call_id, evidence_type, evidence_text,
-          supports ? 1 : 0, confidence_score, linked_at);
-      }
-    })(evidenceList);
-  }
-
   async getEvidenceForHypothesis(hypothesisId) {
     return this._all(
       `SELECT e.*, t.tool_name, t.arguments_json, t.result_json
@@ -435,22 +370,6 @@ class DatabaseManager {
   }
 
   // ==================== Statistics & Analytics ====================
-
-  async getJobStats(jobId) {
-    return this._get(
-      `SELECT
-         COUNT(*) as total_runs,
-         SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as successful_runs,
-         SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed_runs,
-         AVG(duration_ms) as avg_duration_ms,
-         AVG(num_turns) as avg_turns,
-         SUM(total_cost_usd) as total_cost_usd,
-         MIN(started_at) as first_run,
-         MAX(started_at) as last_run
-       FROM agent_runs WHERE job_id = ?`,
-      [jobId]
-    );
-  }
 
   async getToolUsageStats(runId) {
     return this._all(

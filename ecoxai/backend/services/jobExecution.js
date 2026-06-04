@@ -13,11 +13,10 @@ function findArtifactByName(artifacts, filename) {
 /**
  * @param {Object} deps
  * @param {string} jobId
- * @param {{ agentName?: string }} [options]
+ * @param {Object} [options]
  */
 async function startJobExecution(deps, jobId, options = {}) {
   const { state, findJob, updateJob, broadcast, saveState, containerManager, volumeManager } = deps;
-  const agentName = options.agentName;
 
   const job = findJob(jobId);
   if (!job) return { success: false, error: 'Job not found', status: 404 };
@@ -47,8 +46,6 @@ async function startJobExecution(deps, jobId, options = {}) {
   }
 
   try {
-    if (agentName) job.agentName = agentName;
-
     await volumeManager.createWorkspaceVolume(jobId);
 
     updateJob(jobId, {
@@ -93,16 +90,9 @@ async function startJobExecution(deps, jobId, options = {}) {
 
         // Accumulate budget
         if (result.totalCostUsd != null) {
-          if (!state.budget) state.budget = { totalCostUsd: 0, jobCount: 0, sessions: [] };
+          if (!state.budget) state.budget = { totalCostUsd: 0, jobCount: 0 };
           state.budget.totalCostUsd = +(((state.budget.totalCostUsd || 0) + result.totalCostUsd).toFixed(6));
           state.budget.jobCount = (state.budget.jobCount || 0) + 1;
-          state.budget.sessions.push({
-            jobId,
-            title: completedJob?.title || '',
-            costUsd: result.totalCostUsd,
-            numTurns: result.numTurns,
-            completedAt: new Date().toISOString(),
-          });
           saveState();
         }
 

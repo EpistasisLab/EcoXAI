@@ -98,91 +98,6 @@ class VolumeManager {
   }
 
   /**
-   * Delete a workspace volume for a specific job
-   * @param {string} jobId - Job ID
-   */
-  async deleteWorkspaceVolume(jobId) {
-    const volumeName = `${WORKSPACE_PREFIX}${jobId}`;
-
-    try {
-      const volume = docker.getVolume(volumeName);
-      await volume.remove();
-      console.log(`Deleted workspace volume: ${volumeName}`);
-      return true;
-    } catch (error) {
-      if (error.statusCode === 404) {
-        console.log(`Workspace volume not found: ${volumeName}`);
-        return true;
-      }
-      console.error(`Error deleting workspace volume for job ${jobId}:`, error.message);
-      return false;
-    }
-  }
-
-  /**
-   * Copy a dataset file into the shared datasets volume
-   * @param {string} datasetId - Dataset ID
-   * @param {string} filename - Original filename
-   * @param {Buffer|string} content - File content
-   */
-  async copyDatasetToVolume(datasetId, filename, content) {
-    try {
-      // Ensure content is a Buffer
-      const buffer = Buffer.isBuffer(content) ? content : Buffer.from(content);
-
-      // Sanitize filename for safe storage
-      const sanitizedFilename = this.sanitizeFilename(filename);
-      const targetPath = `/datasets/${datasetId}_${sanitizedFilename}`;
-
-      // Create a temporary container to copy files into the volume
-      const container = await docker.createContainer({
-        Image: 'alpine',
-        Cmd: ['sh', '-c', `cat > "${targetPath}"`],
-        HostConfig: {
-          Binds: [`${DATASETS_VOLUME}:/datasets`],
-        },
-        OpenStdin: true,
-        StdinOnce: true,
-        AttachStdin: true,
-        AttachStdout: true,
-        AttachStderr: true,
-      });
-
-      // Attach BEFORE starting to ensure stdin is ready
-      const stream = await container.attach({
-        stream: true,
-        stdin: true,
-        stdout: true,
-        stderr: true,
-        hijack: true,
-      });
-
-      // Start the container
-      await container.start();
-
-      // Write content to stdin and close it
-      stream.write(buffer);
-      stream.end();
-
-      // Wait for container to finish
-      const result = await container.wait();
-
-      // Check exit code
-      if (result.StatusCode !== 0) {
-        throw new Error(`Container exited with code ${result.StatusCode}`);
-      }
-
-      await container.remove();
-
-      console.log(`✓ Copied dataset ${datasetId} (${filename} → ${sanitizedFilename}) to volume: ${buffer.length} bytes`);
-      return { success: true, sanitizedFilename };
-    } catch (error) {
-      console.error(`Error copying dataset to volume:`, error.message);
-      return { success: false, error: error.message };
-    }
-  }
-
-  /**
    * Copy normalized dataset directory structure to volume
    * Creates: /datasets/{datasetId}/raw/ and /datasets/{datasetId}/normalized/
    * @param {string} datasetId - Dataset ID
@@ -280,76 +195,6 @@ class VolumeManager {
   }
 
   /**
-   * Copy a set of raw files (fileMap: { filename → Buffer }) into the datasets volume
-   * as a single dataset under /datasets/{datasetId}/raw/.
-   * Used for multi-file dataset suites (e.g. csanalyze output).
-   */
-  async copyRawFilesAsDataset(datasetId, fileMap) {
-    try {
-      const pack = tar.pack();
-      const chunks = [];
-      const packFinished = new Promise((resolve, reject) => {
-        pack.on('data', chunk => chunks.push(chunk));
-        pack.on('end', resolve);
-        pack.on('error', reject);
-      });
-
-      await new Promise((resolve, reject) => {
-        pack.entry({ name: 'raw', type: 'directory' }, err => { if (err) reject(err); else resolve(); });
-      });
-
-      const metaBuf = Buffer.from(JSON.stringify({
-        files: Object.keys(fileMap),
-        createdAt: new Date().toISOString(),
-        type: 'multi-file-dataset'
-      }, null, 2));
-      await new Promise((resolve, reject) => {
-        pack.entry({ name: 'raw/metadata.json', size: metaBuf.length }, metaBuf, err => { if (err) reject(err); else resolve(); });
-      });
-
-      for (const [filename, content] of Object.entries(fileMap)) {
-        const buf = Buffer.isBuffer(content) ? content : Buffer.from(content);
-        await new Promise((resolve, reject) => {
-          pack.entry({ name: `raw/${filename}`, size: buf.length }, buf, err => { if (err) reject(err); else resolve(); });
-        });
-      }
-
-      pack.finalize();
-      await packFinished;
-      const tarBuffer = Buffer.concat(chunks);
-
-      const container = await docker.createContainer({
-        Image: 'alpine',
-        Cmd: ['sh', '-c', `mkdir -p /datasets/${datasetId} && tar -xf - -C /datasets/${datasetId}`],
-        HostConfig: { Binds: [`${DATASETS_VOLUME}:/datasets`] },
-        OpenStdin: true,
-        StdinOnce: true,
-        AttachStdin: true,
-        AttachStdout: true,
-        AttachStderr: true,
-      });
-
-      const stream = await container.attach({
-        stream: true, stdin: true, stdout: true, stderr: true, hijack: true,
-      });
-
-      await container.start();
-      stream.write(tarBuffer);
-      stream.end();
-
-      const result = await container.wait();
-      if (result.StatusCode !== 0) throw new Error(`Container exited with code ${result.StatusCode}`);
-      await container.remove();
-
-      console.log(`✓ Copied raw dataset suite ${datasetId} to volume (${Object.keys(fileMap).length} files, ${tarBuffer.length} bytes)`);
-      return { success: true };
-    } catch (error) {
-      console.error(`Error copying raw dataset suite to volume:`, error.message);
-      return { success: false, error: error.message };
-    }
-  }
-
-  /**
    * Remove a dataset file from the shared datasets volume
    * @param {string} datasetId - Dataset ID
    * @param {string} filename - Original filename
@@ -377,37 +222,6 @@ class VolumeManager {
     } catch (error) {
       console.error(`Error removing dataset from volume:`, error.message);
       return false;
-    }
-  }
-
-  /**
-   * List all datasets in the shared volume
-   * @returns {Array} List of dataset files
-   */
-  async listDatasetsInVolume() {
-    try {
-      const container = await docker.createContainer({
-        Image: 'alpine',
-        Cmd: ['ls', '-la', '/datasets'],
-        HostConfig: {
-          Binds: [`${DATASETS_VOLUME}:/datasets:ro`],
-        },
-      });
-
-      await container.start();
-      const result = await container.wait();
-
-      let files = [];
-      if (result.StatusCode === 0) {
-        const logs = await container.logs({ stdout: true });
-        files = logs.toString().trim().split('\n').filter((line) => !line.startsWith('total'));
-      }
-
-      await container.remove();
-      return files;
-    } catch (error) {
-      console.error('Error listing datasets in volume:', error.message);
-      return [];
     }
   }
 
@@ -750,44 +564,6 @@ class VolumeManager {
   }
 
   /**
-   * Clean up old workspace volumes (older than specified hours)
-   * @param {number} maxAgeHours - Maximum age in hours
-   */
-  async cleanupOldVolumes(maxAgeHours = 24) {
-    try {
-      const volumes = await docker.listVolumes({
-        filters: { label: ['com.ecoxai.type=workspace'] },
-      });
-
-      const cutoffTime = Date.now() - maxAgeHours * 60 * 60 * 1000;
-      let cleaned = 0;
-
-      for (const vol of volumes.Volumes || []) {
-        const createdLabel = vol.Labels?.['com.ecoxai.created'];
-        if (createdLabel) {
-          const createdTime = new Date(createdLabel).getTime();
-          if (createdTime < cutoffTime) {
-            try {
-              const volume = docker.getVolume(vol.Name);
-              await volume.remove();
-              cleaned++;
-              console.log(`Cleaned up old volume: ${vol.Name}`);
-            } catch (err) {
-              console.error(`Failed to remove volume ${vol.Name}:`, err.message);
-            }
-          }
-        }
-      }
-
-      console.log(`Volume cleanup complete: removed ${cleaned} volumes`);
-      return cleaned;
-    } catch (error) {
-      console.error('Error during volume cleanup:', error.message);
-      return 0;
-    }
-  }
-
-  /**
    * Read a file from a Docker volume using a temporary Alpine container
    * Uses the same approach as readArtifact for consistency
    * @param {string} volumeName - Name of the volume
@@ -843,62 +619,6 @@ class VolumeManager {
   }
 
   /**
-   * Write a file to a Docker volume using a temporary Alpine container
-   * @param {string} volumeName - Name of the volume
-   * @param {string} filePath - Path to file within volume (will be prefixed with /volume/)
-   * @param {string|Buffer} content - File content
-   * @returns {Promise<boolean>} Success status
-   */
-  async writeFileToVolume(volumeName, filePath, content) {
-    try {
-      const buffer = Buffer.isBuffer(content) ? content : Buffer.from(content);
-
-      // Add /volume prefix if not present
-      const volumePath = filePath.startsWith('/volume/') ? filePath : `/volume${filePath}`;
-      const dirPath = path.dirname(volumePath);
-
-      const container = await docker.createContainer({
-        Image: 'alpine',
-        Cmd: ['sh', '-c', `mkdir -p "${dirPath}" && cat > "${volumePath}"`],
-        HostConfig: {
-          Binds: [`${volumeName}:/volume`],
-        },
-        OpenStdin: true,
-        StdinOnce: true,
-        AttachStdin: true,
-        AttachStdout: true,
-        AttachStderr: true,
-      });
-
-      const stream = await container.attach({
-        stream: true,
-        stdin: true,
-        stdout: true,
-        stderr: true,
-        hijack: true,
-      });
-
-      await container.start();
-
-      stream.write(buffer);
-      stream.end();
-
-      const result = await container.wait();
-      await container.remove();
-
-      if (result.StatusCode !== 0) {
-        throw new Error(`Failed to write file: container exited with code ${result.StatusCode}`);
-      }
-
-      console.log(`✓ Wrote file to volume ${volumeName}:${filePath} (${buffer.length} bytes)`);
-      return true;
-    } catch (error) {
-      console.error(`Error writing file ${filePath} to volume ${volumeName}:`, error.message);
-      throw error;
-    }
-  }
-
-  /**
    * Read all normalized context files for a dataset from the datasets volume
    * @param {string} datasetId - Dataset ID
    * @returns {Promise<Object>} Context object with structure, semantic, confidence, provenance
@@ -939,45 +659,6 @@ class VolumeManager {
     }
   }
 
-  /**
-   * Read a file from a job's workspace volume
-   * Convenience wrapper around readFileFromVolume for workspace volumes
-   * @param {string} jobId - Job ID
-   * @param {string} filePath - Path within workspace (e.g., '/workspace/MEMORY.md')
-   * @returns {Promise<Buffer>} File content
-   */
-  async readFileFromWorkspace(jobId, filePath) {
-    const volumeName = `${WORKSPACE_PREFIX}${jobId}`;
-    return this.readFileFromVolume(volumeName, filePath);
-  }
-
-  /**
-   * Get volume statistics
-   * @returns {Object} Volume statistics
-   */
-  async getVolumeStats() {
-    try {
-      const volumes = await docker.listVolumes();
-      const ecoxaiVolumes = (volumes.Volumes || []).filter(
-        (v) => v.Name.startsWith('ecoxai-') || v.Labels?.['com.ecoxai.type']
-      );
-
-      return {
-        total: ecoxaiVolumes.length,
-        datasets: ecoxaiVolumes.filter((v) => v.Name === DATASETS_VOLUME).length,
-        workspaces: ecoxaiVolumes.filter((v) => v.Name.startsWith(WORKSPACE_PREFIX)).length,
-        volumes: ecoxaiVolumes.map((v) => ({
-          name: v.Name,
-          type: v.Labels?.['com.ecoxai.type'] || 'unknown',
-          jobId: v.Labels?.['com.ecoxai.jobId'],
-          created: v.Labels?.['com.ecoxai.created'],
-        })),
-      };
-    } catch (error) {
-      console.error('Error getting volume stats:', error.message);
-      return { total: 0, datasets: 0, workspaces: 0, volumes: [], error: error.message };
-    }
-  }
 }
 
 // Export singleton instance
