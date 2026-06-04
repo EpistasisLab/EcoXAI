@@ -35,27 +35,32 @@ class WikiService {
     if (useFoundry) {
       const apiKey = process.env.ANTHROPIC_FOUNDRY_API_KEY;
       const resource = process.env.ANTHROPIC_FOUNDRY_RESOURCE || 'cbm-staff-gpt4';
-      const model = process.env.CLAUDE_MODEL || process.env.ANTHROPIC_DEFAULT_SONNET_MODEL || 'claude-sonnet-4-5';
-      if (!apiKey) return;
-      try {
-        const AnthropicFoundry = require('@anthropic-ai/foundry-sdk').default;
-        this.anthropic = new AnthropicFoundry({ apiKey, resource });
-        this.model = model;
-      } catch (e) {
-        console.warn('[Wiki] Failed to init Foundry client:', e.message);
+      const model = process.env.CLAUDE_MODEL || process.env.ANTHROPIC_DEFAULT_SONNET_MODEL || 'claude-sonnet-4-6';
+      if (!apiKey) {
+        console.warn('[Wiki] CLAUDE_CODE_USE_FOUNDRY=1 but ANTHROPIC_FOUNDRY_API_KEY not set — falling back to direct API');
+      } else {
+        try {
+          const AnthropicFoundry = require('@anthropic-ai/foundry-sdk').default;
+          this.anthropic = new AnthropicFoundry({ apiKey, resource });
+          this.model = model;
+          return;
+        } catch (e) {
+          console.warn('[Wiki] Failed to init Foundry client:', e.message);
+        }
       }
-    } else {
-      const apiKey = process.env.ANTHROPIC_API_KEY;
-      if (!apiKey) return;
-      try {
-        const Anthropic = require('@anthropic-ai/sdk');
-        const clientOpts = { apiKey };
-        if (process.env.ANTHROPIC_BASE_URL) clientOpts.baseURL = process.env.ANTHROPIC_BASE_URL;
-        this.anthropic = new Anthropic(clientOpts);
-        this.model = process.env.CLAUDE_MODEL || 'claude-sonnet-4-5-20241022';
-      } catch (e) {
-        console.warn('[Wiki] Failed to init Anthropic client:', e.message);
-      }
+    }
+
+    // Direct Anthropic API (default or Foundry fallback)
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) return;
+    try {
+      const Anthropic = require('@anthropic-ai/sdk');
+      const clientOpts = { apiKey };
+      if (process.env.ANTHROPIC_BASE_URL) clientOpts.baseURL = process.env.ANTHROPIC_BASE_URL;
+      this.anthropic = new Anthropic(clientOpts);
+      this.model = process.env.CLAUDE_MODEL || process.env.ANTHROPIC_DEFAULT_SONNET_MODEL || 'claude-sonnet-4-6';
+    } catch (e) {
+      console.warn('[Wiki] Failed to init Anthropic client:', e.message);
     }
   }
 

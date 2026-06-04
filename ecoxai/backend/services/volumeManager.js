@@ -77,9 +77,10 @@ class VolumeManager {
       console.log(`Created workspace volume: ${volumeName}`);
 
       // Initialize workspace with proper ownership (chown to claude user uid:gid 1000:1000)
+      // Pre-create .claude so skills copy failures can't leave it owned by root
       const initContainer = await docker.createContainer({
         Image: 'alpine',
-        Cmd: ['sh', '-c', 'chown -R 1000:1000 /workspace && mkdir -p /workspace/output && chown -R 1000:1000 /workspace/output'],
+        Cmd: ['sh', '-c', 'mkdir -p /workspace/output /workspace/.claude && chown -R 1000:1000 /workspace'],
         HostConfig: {
           Binds: [`${volumeName}:/workspace`],
         },
@@ -455,7 +456,7 @@ class VolumeManager {
       // Create a temporary container to extract the tarball into workspace
       const container = await docker.createContainer({
         Image: 'alpine',
-        Cmd: ['sh', '-c', 'mkdir -p /workspace/.claude/skills && cd /workspace/.claude/skills && tar -xf - && chown -R 1000:1000 /workspace/.claude'],
+        Cmd: ['sh', '-c', 'mkdir -p /workspace/.claude/skills && cd /workspace/.claude/skills && tar -xf -; chown -R 1000:1000 /workspace/.claude'],
         HostConfig: {
           Binds: [`${volumeName}:/workspace`],
         },

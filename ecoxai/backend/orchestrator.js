@@ -34,7 +34,7 @@ const PIPELINE_STAGES = [
     name: 'Generate Hypotheses',
     trigger: 'job_completed:explore',
     auto: true,
-    skill: 'public:pipeline-hypothesize',
+    skill: ['public:pipeline-hypothesize', 'hypotheses:alzkb-graph-query'],
     prompt: 'Run the hypothesis generation phase. Follow the pipeline-hypothesize skill instructions in your workspace.',
   },
   {
@@ -45,8 +45,7 @@ const PIPELINE_STAGES = [
     skill: 'public:pipeline-analyze',
     prompt: `Run the hypothesis testing and validation phase for this specific hypothesis.
 
-**Hypothesis:**
-{hypothesis_json}
+**Hypothesis:** {hypothesis_text}
 
 Focus ONLY on this single hypothesis. Follow the pipeline-analyze skill instructions in your workspace.`,
   }
@@ -68,6 +67,12 @@ class Orchestrator extends EventEmitter {
    */
   init(deps) {
     this.deps = deps;
+    // Apply any persisted stage overrides (skill, prompt, name, auto)
+    const overrides = deps.state.pipelineStageOverrides || {};
+    for (const [stageId, updates] of Object.entries(overrides)) {
+      const stage = PIPELINE_STAGES.find(s => s.id === stageId);
+      if (stage) Object.assign(stage, updates);
+    }
     this._bindEvents();
     console.log('[Orchestrator] Initialized with pipeline stages:', PIPELINE_STAGES.map(s => s.id).join(' → '));
   }
@@ -166,7 +171,7 @@ class Orchestrator extends EventEmitter {
       const { hypothesis } = context;
       let prompt = stage.prompt.replace(/\{datasetId\}/g, datasetId);
       if (hypothesis) {
-        prompt = prompt.replace(/\{hypothesis_json\}/g, JSON.stringify(hypothesis, null, 2));
+        prompt = prompt.replace(/\{hypothesis_text\}/g, hypothesis.hypothesis_text || '');
       }
 
       const jobTitle = hypothesis?.feature_name
@@ -180,7 +185,7 @@ class Orchestrator extends EventEmitter {
         status: 'todo',
         prompt,
         datasetId,
-        selectedSkills: stage.skill ? [stage.skill] : [],
+        selectedSkills: stage.skill ? (Array.isArray(stage.skill) ? stage.skill : [stage.skill]) : [],
         skillsInvoked: [],
         output: '',
         artifacts: [],
@@ -268,10 +273,39 @@ class Orchestrator extends EventEmitter {
         trigger: s.trigger,
         auto: s.auto,
         noJob: s.noJob || false,
-        skill: s.skill || null,
+        skill: s.skill ? (Array.isArray(s.skill) ? s.skill : [s.skill]) : [],
+        prompt: s.prompt || '',
       })),
       active: Array.from(this.activeStages.entries()).map(([datasetId, info]) => ({ datasetId, ...info }))
     };
+  }
+
+  updateStage(stageId, { skill, prompt, name, auto }) {
+    const stage = PIPELINE_STAGES.find(s => s.id === stageId);
+    if (!stage) throw new Error(`Unknown stage: ${stageId}`);
+
+    const changes = {};
+    if (skill !== undefined) changes.skill = Array.isArray(skill) ? skill : [skill];
+    if (prompt !== undefined) changes.prompt = prompt;
+    if (name !== undefined) changes.name = name;
+    if (auto !== undefined) changes.auto = !!auto;
+
+    Object.assign(stage, changes);
+
+    if (this.deps?.state) {
+      if (!this.deps.state.pipelineStageOverrides) this.deps.state.pipelineStageOverrides = {};
+      this.deps.state.pipelineStageOverrides[stageId] = {
+        ...(this.deps.state.pipelineStageOverrides[stageId] || {}),
+        ...changes,
+      };
+      this.deps.saveState();
+    }
+
+    const updated = this.getStatus().stages.find(s => s.id === stageId);
+    if (this.deps?.broadcast) {
+      this.deps.broadcast({ type: 'PIPELINE_STAGE_CONFIG_UPDATE', stage: updated });
+    }
+    return updated;
   }
 
   async _processTestResults(datasetId, artifacts, hypothesisId = null) {

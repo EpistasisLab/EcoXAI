@@ -12,6 +12,12 @@ export ANTHROPIC_DEFAULT_SONNET_MODEL='claude-sonnet-4-6'
 export ANTHROPIC_FOUNDRY_API_KEY=...
 ```
 
+## Set up the docker environment
+```
+cd ecoxai/backend/docker
+docker build -t ecoxai-agent -f Dockerfile.agent .
+```
+
 ## Run the local backend server
 ```
 cd ecoxai/backend

@@ -30,6 +30,9 @@ const state = {
   pipeline: { autoMode: true, stages: [] },
   selectedDatasetId: null,
   selectedJobId: null,
+  selectedStageId: null,
+  stageDraft: null,
+  availableSkills: [],
   activeJobLogs: {},
   activeView: 'datasets',
   hypSort: 'conf-desc',
@@ -40,6 +43,9 @@ const state = {
   hypDetailAsset: null,
   selectedAssetFile: null,
   selectedDetailTab: 'logs',
+  selectedSkillId: null,
+  skillDraft: null,
+  skillsLoaded: false,
   serverBudget: { totalCostUsd: 0, jobCount: 0 },
   serverSettings: { budgetLimitUsd: 10 },
 };
@@ -113,6 +119,15 @@ function handleMessage(msg) {
       if (msg.autoMode !== undefined) updateAutoModeBadge(msg.autoMode);
       break;
 
+    case 'PIPELINE_STAGE_CONFIG_UPDATE':
+      if (msg.stage) {
+        const s = (state.pipeline.stages || []).find(s => s.id === msg.stage.id);
+        if (s) Object.assign(s, msg.stage);
+        renderPipeline();
+        if (state.selectedStageId === msg.stage.id && !state.selectedJobId) renderStageDetail(msg.stage.id);
+      }
+      break;
+
     case 'DATASETS_PROMOTED':
       if (msg.datasets) state.datasets = msg.datasets;
       renderDatasets();
@@ -153,6 +168,7 @@ function switchView(name) {
   document.querySelectorAll('.view').forEach(el => {
     el.classList.toggle('active', el.id === `view-${name}`);
   });
+  if (name === 'skills' && !state.skillsLoaded) loadSkillsList();
 }
 
 document.querySelectorAll('.nav-item').forEach(el => {
@@ -247,6 +263,12 @@ function renderPipeline() {
     const ss = stageStatuses[stage.id];
     const status = ss?.status || 'idle';
     const icon = { running: '⚡', completed: '✓', failed: '✗', waiting: '⏸', idle: '○' }[status] || '○';
+    const selectedStage = state.selectedStageId === stage.id ? ' selected' : '';
+
+    const skills = Array.isArray(stage.skill) ? stage.skill : [];
+    const skillPillsHtml = skills.length > 0
+      ? `<div class="stage-skills">${skills.map(s => `<span class="stage-skill-pill">${escHtml(s.split(':')[1] || s)}</span>`).join('')}</div>`
+      : '';
 
     const stageJobs = state.jobs.filter(j => j._stageId === stage.id);
     const jobsHtml = stageJobs.length === 0 ? '' : `
@@ -256,7 +278,7 @@ function renderPipeline() {
           const cost = j.totalCostUsd != null ? `<span class="stage-job-cost">$${j.totalCostUsd.toFixed(4)}</span>` : '';
           const turns = j.numTurns != null ? `<span class="stage-job-turns">${j.numTurns}t</span>` : '';
           const sel = state.selectedJobId === j.id ? ' selected' : '';
-          return `<div class="stage-job${sel}" onclick="app.selectJob('${j.id}')">
+          return `<div class="stage-job${sel}" onclick="event.stopPropagation();app.selectJob('${j.id}')">
             <span class="stage-job-dot" style="background:${dot}"></span>
             <span class="stage-job-status">${escHtml(j.status)}</span>
             ${cost}${turns}
@@ -266,13 +288,14 @@ function renderPipeline() {
       </div>`;
 
     return `
-      <div class="stage-item ${status}" id="stage-${stage.id}">
+      <div class="stage-item ${status}${selectedStage}" id="stage-${stage.id}" onclick="app.selectStage('${stage.id}')">
         <div class="stage-header">
           <span class="stage-icon">${icon}</span>
           <span class="stage-name">${escHtml(stage.name)}</span>
           <span class="stage-status">${status}</span>
           ${ss?.datasetId && status !== 'completed' ? `<button class="btn" style="padding:2px 8px;font-size:10px;margin-left:auto" onclick="event.stopPropagation();app.triggerStage('${stage.id}','${ss.datasetId}')">Run</button>` : ''}
         </div>
+        ${skillPillsHtml}
         ${jobsHtml}
       </div>`;
   }).join('');
@@ -349,6 +372,57 @@ function renderJobDetail(jobId) {
     const logEl = detail.querySelector('.job-log');
     if (logEl) logEl.scrollTop = logEl.scrollHeight;
   }
+}
+
+function renderStageDetail(stageId) {
+  const detail = document.getElementById('pipeline-detail');
+  const stage = (state.pipeline.stages || []).find(s => s.id === stageId);
+  if (!stage) return;
+
+  // Preserve prompt text if user is mid-edit
+  const existingTextarea = document.getElementById('stage-prompt-input');
+  if (existingTextarea && state.stageDraft) state.stageDraft.prompt = existingTextarea.value;
+
+  if (!state.stageDraft) {
+    state.stageDraft = { skill: [...(stage.skill || [])], prompt: stage.prompt || '' };
+  }
+
+  const draft = state.stageDraft;
+  const skillChips = draft.skill.map((s, i) =>
+    `<span class="skill-chip">${escHtml(s)}<button class="skill-chip-remove" onclick="app.removeDraftSkill(${i})" title="Remove">×</button></span>`
+  ).join('');
+
+  const suggestions = (state.availableSkills || [])
+    .map(s => `<option value="${escAttr(s.id)}">`)
+    .join('');
+
+  detail.innerHTML = `
+    <div class="detail-header">
+      <div class="detail-title">${escHtml(stage.name)}</div>
+      <div class="detail-meta">
+        <span>trigger: ${escHtml(stage.trigger || 'manual')}</span>
+        <span class="auto-badge ${stage.auto ? 'on' : 'off'}" style="margin-left:2px">${stage.auto ? 'AUTO' : 'MANUAL'}</span>
+      </div>
+    </div>
+    <div class="stage-config-body">
+      <div class="stage-config-section">
+        <div class="stage-config-label">Skills</div>
+        <div class="skill-chips">${skillChips || '<span style="font-size:11px;color:var(--text-dim)">No skills attached</span>'}</div>
+        <div class="skill-add-row">
+          <input type="text" id="skill-add-input" class="settings-input" placeholder="visibility:skill-name" style="flex:1;width:auto" list="skill-suggestions">
+          <datalist id="skill-suggestions">${suggestions}</datalist>
+          <button class="btn" onclick="app.addDraftSkill()">Add</button>
+        </div>
+      </div>
+      <div class="stage-config-section">
+        <div class="stage-config-label">Prompt</div>
+        <textarea id="stage-prompt-input" class="stage-prompt-textarea">${escHtml(draft.prompt)}</textarea>
+      </div>
+      <div class="stage-config-actions">
+        <button class="btn" onclick="app.cancelStageEdit()">Reset</button>
+        <button class="btn primary" onclick="app.saveStageConfig()">Save</button>
+      </div>
+    </div>`;
 }
 
 function buildAssetsPane(job) {
@@ -700,6 +774,77 @@ document.getElementById('hyp-group').addEventListener('change', e => {
   renderHypotheses();
 });
 
+// ── Skills view ───────────────────────────────────────────────────────────────
+async function loadSkillsList() {
+  try {
+    const resp = await fetch(`${apiBase()}/pipeline/skills`);
+    const data = await resp.json();
+    state.availableSkills = data.skills || [];
+    state.skillsLoaded = true;
+    renderSkillsList();
+  } catch (e) { console.warn('Failed to load skills:', e); }
+}
+
+function renderSkillsList() {
+  const list = document.getElementById('skill-list');
+  if (!list) return;
+  const skills = state.availableSkills;
+
+  const countEl = document.getElementById('skills-count');
+  if (countEl) countEl.textContent = skills.length;
+
+  if (skills.length === 0) {
+    list.innerHTML = '<div class="empty-state" style="padding:24px"><div class="icon" style="font-size:24px">🛠</div><p>No skills found.</p></div>';
+    return;
+  }
+
+  const groups = {};
+  for (const s of skills) {
+    (groups[s.visibility] = groups[s.visibility] || []).push(s);
+  }
+
+  list.innerHTML = Object.keys(groups).sort().map(vis => `
+    <div class="skill-group">
+      <div class="skill-group-header">${escHtml(vis)}</div>
+      ${groups[vis].map(s => {
+        const sel = state.selectedSkillId === s.id ? ' selected' : '';
+        return `<div class="stage-item${sel}" onclick="app.selectSkill('${escAttr(s.id)}')">
+          <div class="stage-header">
+            <span class="stage-icon">📄</span>
+            <span class="stage-name">${escHtml(s.name)}</span>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>`).join('');
+}
+
+function renderSkillDetail(skillId) {
+  const detail = document.getElementById('skill-detail');
+  const skill = (state.availableSkills || []).find(s => s.id === skillId);
+  if (!skill || !detail) return;
+
+  const existingTextarea = document.getElementById('skill-content-input');
+  if (existingTextarea && state.skillDraft !== null) state.skillDraft = existingTextarea.value;
+
+  const content = state.skillDraft !== null ? state.skillDraft : '(loading…)';
+
+  detail.innerHTML = `
+    <div class="detail-header">
+      <div class="detail-title">${escHtml(skill.name)}</div>
+      <div class="detail-meta"><span style="color:var(--text-dim)">${escHtml(skill.visibility)}</span></div>
+    </div>
+    <div class="stage-config-body">
+      <div class="stage-config-section" style="flex:1;display:flex;flex-direction:column">
+        <div class="stage-config-label">SKILL.md</div>
+        <textarea id="skill-content-input" class="stage-prompt-textarea" style="flex:1;min-height:400px;font-family:monospace;font-size:12px">${escHtml(content)}</textarea>
+      </div>
+      <div class="stage-config-actions">
+        <button class="btn" onclick="app.cancelSkillEdit()">Reset</button>
+        <button class="btn primary" onclick="app.saveSkillContent()">Save</button>
+      </div>
+    </div>`;
+}
+
 // ── Settings ──────────────────────────────────────────────────────────────────
 function applySettingsToForm() {
   document.getElementById('s-host').value         = settings.host;
@@ -760,9 +905,84 @@ window.app = {
 
   selectJob(jobId) {
     state.selectedJobId = jobId;
+    state.selectedStageId = null;
+    state.stageDraft = null;
     state.selectedAssetFile = null;
     renderPipeline();
     renderJobDetail(jobId);
+  },
+
+  selectStage(stageId) {
+    if (state.selectedStageId === stageId && !state.selectedJobId) {
+      state.selectedStageId = null;
+      state.stageDraft = null;
+      document.getElementById('pipeline-detail').innerHTML = `<div class="detail-empty"><div style="font-size:32px;margin-bottom:8px">⚡</div><p>Select a job or stage to view details</p></div>`;
+      renderPipeline();
+      return;
+    }
+    state.selectedStageId = stageId;
+    state.selectedJobId = null;
+    state.stageDraft = null;
+    state.selectedAssetFile = null;
+    renderPipeline();
+    renderStageDetail(stageId);
+    if (!state.availableSkills.length) {
+      fetch(`${apiBase()}/pipeline/skills`)
+        .then(r => r.json())
+        .then(d => { state.availableSkills = d.skills || []; renderStageDetail(stageId); })
+        .catch(() => {});
+    }
+  },
+
+  removeDraftSkill(idx) {
+    const stage = (state.pipeline.stages || []).find(s => s.id === state.selectedStageId);
+    if (!stage) return;
+    if (!state.stageDraft) state.stageDraft = { skill: [...(stage.skill || [])], prompt: stage.prompt || '' };
+    state.stageDraft.skill.splice(idx, 1);
+    renderStageDetail(state.selectedStageId);
+  },
+
+  addDraftSkill() {
+    const input = document.getElementById('skill-add-input');
+    const val = input?.value.trim();
+    if (!val) return;
+    const stage = (state.pipeline.stages || []).find(s => s.id === state.selectedStageId);
+    if (!stage) return;
+    if (!state.stageDraft) state.stageDraft = { skill: [...(stage.skill || [])], prompt: stage.prompt || '' };
+    if (!state.stageDraft.skill.includes(val)) state.stageDraft.skill.push(val);
+    if (input) input.value = '';
+    renderStageDetail(state.selectedStageId);
+  },
+
+  cancelStageEdit() {
+    state.stageDraft = null;
+    if (state.selectedStageId) renderStageDetail(state.selectedStageId);
+  },
+
+  async saveStageConfig() {
+    const stageId = state.selectedStageId;
+    if (!stageId) return;
+    const stage = (state.pipeline.stages || []).find(s => s.id === stageId);
+    if (!stage) return;
+
+    const skill = state.stageDraft?.skill ?? stage.skill ?? [];
+    const prompt = document.getElementById('stage-prompt-input')?.value ?? stage.prompt ?? '';
+
+    try {
+      const resp = await fetch(`${apiBase()}/pipeline/stages/${stageId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ skill, prompt }),
+      });
+      const data = await resp.json();
+      if (!data.success) throw new Error(data.error);
+      if (data.stage) Object.assign(stage, data.stage);
+      state.stageDraft = null;
+      renderPipeline();
+      renderStageDetail(stageId);
+    } catch (e) {
+      alert('Save failed: ' + e.message);
+    }
   },
 
   selectDetailTab(tab) {
@@ -871,6 +1091,76 @@ window.app = {
       const data = await resp.json();
       if (data.budget) { state.serverBudget = data.budget; renderBudgetStatus(); }
     } catch (e) { console.warn('Failed to reset budget:', e); }
+  },
+
+  async selectSkill(skillId) {
+    if (state.selectedSkillId === skillId) return;
+    state.selectedSkillId = skillId;
+    state.skillDraft = null;
+    renderSkillsList();
+
+    const skill = (state.availableSkills || []).find(s => s.id === skillId);
+    if (!skill) return;
+
+    renderSkillDetail(skillId);
+
+    try {
+      const resp = await fetch(`${apiBase()}/pipeline/skills/${encodeURIComponent(skill.visibility)}/${encodeURIComponent(skill.name)}/content`);
+      const data = await resp.json();
+      if (!data.success) throw new Error(data.error);
+      state.skillDraft = data.content;
+      renderSkillDetail(skillId);
+    } catch (e) {
+      state.skillDraft = `// Failed to load: ${e.message}`;
+      renderSkillDetail(skillId);
+    }
+  },
+
+  async cancelSkillEdit() {
+    const skillId = state.selectedSkillId;
+    if (!skillId) return;
+    state.skillDraft = null;
+    const skill = (state.availableSkills || []).find(s => s.id === skillId);
+    if (!skill) return;
+    renderSkillDetail(skillId);
+    try {
+      const resp = await fetch(`${apiBase()}/pipeline/skills/${encodeURIComponent(skill.visibility)}/${encodeURIComponent(skill.name)}/content`);
+      const data = await resp.json();
+      if (!data.success) throw new Error(data.error);
+      state.skillDraft = data.content;
+      renderSkillDetail(skillId);
+    } catch (e) {
+      state.skillDraft = `// Failed to load: ${e.message}`;
+      renderSkillDetail(skillId);
+    }
+  },
+
+  async saveSkillContent() {
+    const skillId = state.selectedSkillId;
+    if (!skillId) return;
+    const skill = (state.availableSkills || []).find(s => s.id === skillId);
+    if (!skill) return;
+
+    const content = document.getElementById('skill-content-input')?.value ?? '';
+
+    try {
+      const resp = await fetch(`${apiBase()}/pipeline/skills/${encodeURIComponent(skill.visibility)}/${encodeURIComponent(skill.name)}/content`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content }),
+      });
+      const data = await resp.json();
+      if (!data.success) throw new Error(data.error);
+      state.skillDraft = content;
+      const detail = document.getElementById('skill-detail');
+      const savedMsg = document.createElement('div');
+      savedMsg.style.cssText = 'padding:6px 16px;font-size:12px;color:var(--green)';
+      savedMsg.textContent = '✓ Saved';
+      detail.appendChild(savedMsg);
+      setTimeout(() => savedMsg.remove(), 2000);
+    } catch (e) {
+      alert('Save failed: ' + e.message);
+    }
   },
 };
 

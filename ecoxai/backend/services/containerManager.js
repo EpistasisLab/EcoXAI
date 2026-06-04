@@ -28,7 +28,7 @@ function formatClaudeOutput(json) {
         if (item.type === 'text') output += `\n💭 ${item.text}\n`;
         else if (item.type === 'thinking') { output += `\n🧠 Thinking: ${item.thinking}\n`; thinking = item.thinking; }
         else if (item.type === 'tool_use') {
-          output += `\n🔧 Tool: ${item.name}\n`;
+          output += `\n🔧 Tool: ${item.name} - Arguments: ${JSON.stringify(item.input)}\n`;
           toolCalls.push({ tool_id: item.id, tool_name: item.name, arguments: item.input });
         }
       }
