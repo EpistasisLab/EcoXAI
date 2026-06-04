@@ -179,6 +179,22 @@ class Orchestrator extends EventEmitter {
         : `[Pipeline] ${stage.name}`;
 
       // Create job
+      // Attach explore report for stages that benefit from prior exploration context
+      let explorationReport = null;
+      if (stage.id === 'hypothesize' || stage.id === 'analyze') {
+        const exploreJob = (state.jobs || [])
+          .filter(j => j._stageId === 'explore' && j.datasetId === datasetId && j.status === 'completed')
+          .sort((a, b) => (b.completedAt || '').localeCompare(a.completedAt || ''))
+          .at(0);
+        if (exploreJob) {
+          const reportArtifact = (exploreJob.artifacts || []).find(a => {
+            const n = a.name || '';
+            return n === 'report.md' || n === 'exploration_report.md';
+          });
+          explorationReport = reportArtifact?.content ?? null;
+        }
+      }
+
       const job = {
         id: `J${Date.now()}_${stage.id}`,
         title: jobTitle,
@@ -196,6 +212,7 @@ class Orchestrator extends EventEmitter {
         _stageId: stage.id,   // Tag so jobExecution can emit the right event
         _pipelineDatasetId: datasetId,
         _hypothesisId: hypothesis?.hypothesis_id ?? null,
+        _explorationReport: explorationReport,
       };
 
       state.jobs.push(job);

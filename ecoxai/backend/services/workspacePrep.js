@@ -28,19 +28,37 @@ async function prepareWorkspace(jobId, job, state, volumeManager) {
     }
   }
 
-  // 3. Build enhanced prompt with normalization context
+  // 3. Write exploration_report.md if provided by a prior explore stage
+  const { _explorationReport } = job;
+  if (_explorationReport) {
+    const written = await volumeManager.writeWorkspaceFile(jobId, 'exploration_report.md', _explorationReport);
+    if (!written) {
+      console.warn(`[workspacePrep] Failed to write exploration_report.md for job ${jobId}`);
+    }
+  }
+
+  // 4. Build enhanced prompt with normalization context
   let enhancedPrompt = prompt;
   if (datasetId && state?.datasets?.[datasetId]) {
     const dataset = state.datasets[datasetId];
     const datasetBasePath = `/datasets/${datasetId}`;
 
     if (dataset.normalization) {
-      const userDescription = dataset.normalization.semanticMetadata?.user_description;
-      const descriptionSection = userDescription
-        ? `\n**User Notes:** ${userDescription}\n`
-        : '';
+      if (_explorationReport) {
+        enhancedPrompt = `IMPORTANT: A normalized dataset is attached to this task.
 
-      enhancedPrompt = `IMPORTANT: A normalized dataset is attached to this task.
+**Dataset Location:** ${datasetBasePath}/normalized/
+
+**Read this first:** \`/workspace/exploration_report.md\` — contains the full exploration findings, schema, and data quality summary from the previous pipeline stage.
+
+Task: ${prompt}`;
+      } else {
+        const userDescription = dataset.normalization.semanticMetadata?.user_description;
+        const descriptionSection = userDescription
+          ? `\n**User Notes:** ${userDescription}\n`
+          : '';
+
+        enhancedPrompt = `IMPORTANT: A normalized dataset is attached to this task.
 
 **Dataset Location:** ${datasetBasePath}/normalized/
 
@@ -58,12 +76,13 @@ ${descriptionSection}
 See CLAUDE.md in the workspace for complete normalized data contracts.
 
 Task: ${prompt}`;
+      }
     } else {
       enhancedPrompt = `IMPORTANT: A dataset is attached. Available at: ${datasetBasePath}/\nRun \`ls -la ${datasetBasePath}/\` to verify. Check DATASET_ID and DATASET_FILENAME env vars.\n\nTask: ${prompt}`;
     }
   }
 
-  // 4. Write task.txt to workspace volume
+  // 5. Write task.txt to workspace volume
   await volumeManager.writeTaskFile(jobId, enhancedPrompt);
 
   return { enhancedPrompt };

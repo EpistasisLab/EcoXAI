@@ -823,9 +823,6 @@ function renderSkillDetail(skillId) {
   const skill = (state.availableSkills || []).find(s => s.id === skillId);
   if (!skill || !detail) return;
 
-  const existingTextarea = document.getElementById('skill-content-input');
-  if (existingTextarea && state.skillDraft !== null) state.skillDraft = existingTextarea.value;
-
   const content = state.skillDraft !== null ? state.skillDraft : '(loading…)';
 
   detail.innerHTML = `

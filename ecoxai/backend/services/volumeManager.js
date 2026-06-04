@@ -303,14 +303,19 @@ class VolumeManager {
    * @param {string} taskContent - Task/prompt content
    */
   async writeTaskFile(jobId, taskContent) {
+    return this.writeWorkspaceFile(jobId, 'task.txt', taskContent);
+  }
+
+  async writeWorkspaceFile(jobId, filename, content) {
     const volumeName = `${WORKSPACE_PREFIX}${jobId}`;
+    const safeName = filename.replace(/'/g, "'\\''");
 
     try {
-      const buffer = Buffer.from(taskContent);
+      const buffer = Buffer.from(content);
 
       const container = await docker.createContainer({
         Image: 'alpine',
-        Cmd: ['sh', '-c', 'cat > "/workspace/task.txt"'],
+        Cmd: ['sh', '-c', `cat > "/workspace/${safeName}"`],
         HostConfig: {
           Binds: [`${volumeName}:/workspace`],
         },
@@ -343,10 +348,10 @@ class VolumeManager {
 
       await container.remove();
 
-      console.log(`✓ Wrote task file for job ${jobId}: ${buffer.length} bytes`);
+      console.log(`✓ Wrote ${filename} for job ${jobId}: ${buffer.length} bytes`);
       return true;
     } catch (error) {
-      console.error(`Error writing task file for job ${jobId}:`, error.message);
+      console.error(`Error writing ${filename} for job ${jobId}:`, error.message);
       return false;
     }
   }
