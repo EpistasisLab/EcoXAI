@@ -359,6 +359,9 @@ html, body { height: 100%; font-family: 'Segoe UI', system-ui, sans-serif; backg
 .hyp-detail-row { font-size: 11px; }
 .hyp-detail-row strong { color: var(--text-dim); margin-right: 4px; }
 .hyp-detail-row span { color: var(--text); line-height: 1.5; }
+.hyp-running { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; color: var(--yellow); font-weight: 600; }
+.hyp-hint { font-size: 10px; color: var(--text-dim); opacity: 0.6; white-space: nowrap; }
+.hyp-card:hover .hyp-hint { opacity: 1; color: var(--accent2); }
 
 /* Status badges */
 .status-badge { padding: 2px 7px; border-radius: 10px; font-size: 10px; font-weight: 700; }

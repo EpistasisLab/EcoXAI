@@ -22,24 +22,27 @@ function getAnthropicClient() {
   if (useFoundry) {
     const apiKey = process.env.ANTHROPIC_FOUNDRY_API_KEY;
     const resource = process.env.ANTHROPIC_FOUNDRY_RESOURCE || 'cbm-staff-gpt4';
-    if (!apiKey) return null;
-    try {
-      const AnthropicFoundry = require('@anthropic-ai/foundry-sdk').default;
-      anthropic = new AnthropicFoundry({ apiKey, resource });
-    } catch (e) {
-      console.warn('[jobPostCompletion] Foundry SDK unavailable:', e.message);
+    if (apiKey) {
+      try {
+        const AnthropicFoundry = require('@anthropic-ai/foundry-sdk').default;
+        anthropic = new AnthropicFoundry({ apiKey, resource });
+        return anthropic;
+      } catch (e) {
+        console.warn('[jobPostCompletion] Foundry SDK unavailable, falling back to direct API:', e.message);
+      }
     }
-  } else {
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) return null;
-    try {
-      const Anthropic = require('@anthropic-ai/sdk');
-      const opts = { apiKey };
-      if (process.env.ANTHROPIC_BASE_URL) opts.baseURL = process.env.ANTHROPIC_BASE_URL;
-      anthropic = new Anthropic(opts);
-    } catch (e) {
-      console.warn('[jobPostCompletion] Anthropic SDK unavailable:', e.message);
-    }
+  }
+
+  // Direct Anthropic API (default or Foundry fallback)
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) return null;
+  try {
+    const Anthropic = require('@anthropic-ai/sdk');
+    const opts = { apiKey };
+    if (process.env.ANTHROPIC_BASE_URL) opts.baseURL = process.env.ANTHROPIC_BASE_URL;
+    anthropic = new Anthropic(opts);
+  } catch (e) {
+    console.warn('[jobPostCompletion] Anthropic SDK unavailable:', e.message);
   }
 
   return anthropic;
@@ -493,4 +496,60 @@ async function _updateHypothesisWithResults(hypothesisId, results) {
   }
 }
 
-module.exports = { processJobCompletion };
+/**
+ * Evaluate a hypothesis verdict by asking Claude to read the analyze job's report.md.
+ * Used as a fallback for hypotheses that cannot be evaluated via feature-importance numerics.
+ *
+ * @param {Object} hypothesis - Full hypothesis row from the database
+ * @param {string} reportContent - Content of report.md from the analyze job
+ * @returns {Promise<{status: string, reasoning: string}|null>}
+ */
+async function evaluateHypothesisFromReport(hypothesis, reportContent) {
+  const client = getAnthropicClient();
+  if (!client) return null;
+
+  const metricHint = hypothesis.expected_metric
+    ? `\nExpected metric: ${hypothesis.expected_metric}`
+    : '';
+
+  const userPrompt = `You are evaluating whether a scientific hypothesis was supported or rejected based on an analysis report.
+
+Hypothesis: "${hypothesis.hypothesis_text}"
+Hypothesis type: ${hypothesis.hypothesis_type || 'unknown'}${metricHint}
+
+Analysis report:
+---
+${reportContent.substring(0, 8000)}
+---
+
+Based solely on the evidence in the report, determine the verdict for this hypothesis.
+
+Return ONLY a JSON object:
+{
+  "status": "supported" | "rejected" | "needs_more_data",
+  "reasoning": "<1-2 sentences citing specific evidence from the report>"
+}`;
+
+  try {
+    const message = await client.messages.create({
+      model: getModel(),
+      max_tokens: 256,
+      messages: [{ role: 'user', content: userPrompt }],
+    });
+
+    const responseText = message.content[0]?.text?.trim() ?? '';
+    const jsonText = extractJSON(responseText);
+    if (!jsonText) return null;
+
+    const parsed = JSON.parse(jsonText);
+    const status = parsed.status;
+    if (!['supported', 'rejected', 'needs_more_data'].includes(status)) return null;
+
+    return { status, reasoning: parsed.reasoning || '' };
+  } catch (err) {
+    console.warn('[jobPostCompletion] evaluateHypothesisFromReport failed:', err.message);
+    return null;
+  }
+}
+
+module.exports = { processJobCompletion, evaluateHypothesisFromReport };

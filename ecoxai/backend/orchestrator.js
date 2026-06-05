@@ -8,6 +8,7 @@
  */
 
 const EventEmitter = require('events');
+const { evaluateHypothesisFromReport } = require('./services/jobPostCompletion');
 
 // ═══════════════════════════════════════════════════════
 //  PIPELINE CONFIGURATION — Edit this to change behavior
@@ -67,6 +68,7 @@ class Orchestrator extends EventEmitter {
    */
   init(deps) {
     this.deps = deps;
+    this.autoMode = deps.state.pipelineAutoMode !== undefined ? deps.state.pipelineAutoMode : true;
     // Apply any persisted stage overrides (skill, prompt, name, auto)
     const overrides = deps.state.pipelineStageOverrides || {};
     for (const [stageId, updates] of Object.entries(overrides)) {
@@ -107,11 +109,22 @@ class Orchestrator extends EventEmitter {
       // Feed test results back to hypothesis statuses and advance per-hypothesis queue
       if (stageId === 'analyze') {
         const job = (this.deps.state.jobs || []).find(j => j.id === jobId);
+        this.deps.broadcast({ type: 'DATABASE_UPDATE', entity: 'hypotheses' });
         this._processTestResults(datasetId, artifacts, job?._hypothesisId).catch(err =>
           console.warn('[Orchestrator] Verdict processing failed:', err.message)
         );
         await this._runNextHypothesisAnalysis(datasetId);
         return; // analyze doesn't advance to a further stage
+      }
+
+      // After explore: promote cleaned_data.csv to shared datasets volume for downstream stages
+      if (stageId === 'explore') {
+        const { volumeManager } = this.deps;
+        if (volumeManager) {
+          await volumeManager.copyCleanedDatasetToVolume(datasetId, jobId).catch(err =>
+            console.warn('[Orchestrator] Failed to copy cleaned dataset to volume:', err.message)
+          );
+        }
       }
 
       // Trigger next stage based on completed stage
@@ -131,6 +144,10 @@ class Orchestrator extends EventEmitter {
   }
 
   async _runNextHypothesisAnalysis(datasetId) {
+    if (!this.autoMode) {
+      console.log(`[Orchestrator] Auto-mode off, skipping hypothesis analysis for ${datasetId}`);
+      return;
+    }
     const queue = this.hypothesisQueues.get(datasetId);
     if (!queue || !queue.length) {
       this.hypothesisQueues.delete(datasetId);
@@ -238,13 +255,21 @@ class Orchestrator extends EventEmitter {
   pause() {
     this.autoMode = false;
     console.log('[Orchestrator] Auto-mode disabled');
-    if (this.deps) this.deps.broadcast({ type: 'PIPELINE_STAGE_UPDATE', autoMode: false });
+    if (this.deps) {
+      this.deps.state.pipelineAutoMode = false;
+      this.deps.saveState();
+      this.deps.broadcast({ type: 'PIPELINE_STAGE_UPDATE', autoMode: false });
+    }
   }
 
   resume() {
     this.autoMode = true;
     console.log('[Orchestrator] Auto-mode enabled');
-    if (this.deps) this.deps.broadcast({ type: 'PIPELINE_STAGE_UPDATE', autoMode: true });
+    if (this.deps) {
+      this.deps.state.pipelineAutoMode = true;
+      this.deps.saveState();
+      this.deps.broadcast({ type: 'PIPELINE_STAGE_UPDATE', autoMode: true });
+    }
     setImmediate(() => this._advanceStuckDatasets().catch(err => console.error('[Orchestrator] Resume advance error:', err.message)));
   }
 
@@ -329,42 +354,73 @@ class Orchestrator extends EventEmitter {
     const { dbManager, broadcast } = this.deps;
     if (!dbManager) return;
 
+    const resolvedIds = new Set();
+
+    // Path A — feature importance: numeric comparison for hypotheses with feature_name
     const importanceArtifact = (artifacts || []).find(a => {
       const name = typeof a === 'string' ? a : (a.name || a.path || '');
       return name === 'feature_importance_results.json' || name.endsWith('/feature_importance_results.json');
     });
-    if (!importanceArtifact?.content) return;
+    if (importanceArtifact?.content) {
+      try {
+        const importanceData = JSON.parse(importanceArtifact.content);
+        const importanceByFeature = {};
+        for (const item of importanceData) {
+          if (item.feature && item.importance != null) importanceByFeature[item.feature] = item.importance;
+        }
 
-    try {
-      const importanceData = JSON.parse(importanceArtifact.content);
-      const importanceByFeature = {};
-      for (const item of importanceData) {
-        if (item.feature && item.importance != null) importanceByFeature[item.feature] = item.importance;
-      }
+        const allHypotheses = await dbManager.getHypothesesForDataset(datasetId);
+        const hypotheses = hypothesisId
+          ? allHypotheses.filter(h => h.hypothesis_id === hypothesisId)
+          : allHypotheses;
+        let updated = 0;
+        for (const hyp of hypotheses) {
+          if (!hyp.feature_name) continue;
+          const actual = importanceByFeature[hyp.feature_name];
+          if (actual == null) continue;
+          const expected = hyp.expected_importance ?? 0;
+          const newStatus = actual >= expected ? 'supported'
+            : (expected > 0 && actual >= expected * 0.5) ? 'needs_more_data'
+            : 'rejected';
+          await dbManager.updateHypothesis(hyp.hypothesis_id, { status: newStatus, actual_importance: actual });
+          resolvedIds.add(hyp.hypothesis_id);
+          updated++;
+        }
 
-      const allHypotheses = await dbManager.getHypothesesForDataset(datasetId);
-      const hypotheses = hypothesisId
-        ? allHypotheses.filter(h => h.hypothesis_id === hypothesisId)
-        : allHypotheses;
-      let updated = 0;
-      for (const hyp of hypotheses) {
-        if (!hyp.feature_name) continue;
-        const actual = importanceByFeature[hyp.feature_name];
-        if (actual == null) continue;
-        const expected = hyp.expected_importance ?? 0;
-        const newStatus = actual >= expected ? 'supported'
-          : (expected > 0 && actual >= expected * 0.5) ? 'needs_more_data'
-          : 'rejected';
-        await dbManager.updateHypothesis(hyp.hypothesis_id, { status: newStatus, actual_importance: actual });
-        updated++;
+        if (updated > 0) {
+          broadcast({ type: 'DATABASE_UPDATE', entity: 'hypotheses' });
+          console.log(`[Orchestrator] Updated ${updated} hypothesis verdicts via feature importance for dataset ${datasetId}`);
+        }
+      } catch (err) {
+        console.warn('[Orchestrator] _processTestResults (feature importance) error:', err.message);
       }
+    }
 
-      if (updated > 0) {
-        broadcast({ type: 'DATABASE_UPDATE', entity: 'hypotheses' });
-        console.log(`[Orchestrator] Updated ${updated} hypothesis verdicts for dataset ${datasetId}`);
+    // Path B — report-based fallback: use Claude to read report.md for the specific hypothesis
+    if (hypothesisId && !resolvedIds.has(hypothesisId)) {
+      try {
+        const reportArtifact = (artifacts || []).find(a => {
+          const name = typeof a === 'string' ? a : (a.name || a.path || '');
+          const basename = name.includes('/') ? name.split('/').pop() : name;
+          return basename === 'report.md';
+        });
+        if (reportArtifact?.content) {
+          const hyp = await dbManager.getHypothesis(hypothesisId);
+          if (hyp && !['supported', 'rejected'].includes(hyp.status)) {
+            const verdict = await evaluateHypothesisFromReport(hyp, reportArtifact.content);
+            if (verdict) {
+              await dbManager.updateHypothesis(hypothesisId, {
+                status: verdict.status,
+                evaluation_reasoning: verdict.reasoning,
+              });
+              broadcast({ type: 'DATABASE_UPDATE', entity: 'hypotheses' });
+              console.log(`[Orchestrator] Hypothesis ${hypothesisId} → ${verdict.status} via report.md`);
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('[Orchestrator] _processTestResults (report-based) error:', err.message);
       }
-    } catch (err) {
-      console.warn('[Orchestrator] _processTestResults error:', err.message);
     }
   }
 

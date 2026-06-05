@@ -29,21 +29,14 @@ import pandas as pd
 
 dataset_id = os.environ.get('DATASET_ID', '')
 domain = os.environ.get('DATASET_DOMAIN', 'unknown')
-base = f'/datasets/{dataset_id}/normalized'
-
-# Read semantic metadata
-with open(f'{base}/semantic.json') as f:
-    semantic = json.load(f)
-
-entities = semantic.get('entities', [])
-print(f"Domain: {domain}, Entities: {entities}")
+print(f"Domain: {domain}")
 
 # Read exploration report for context
-with open('/workspace/output/exploration_report.md') as f:
+with open('/workspace/exploration_report.md') as f:
     exploration_report = f.read()
 
-# Load cleaned data to inspect columns
-df = pd.read_csv('/workspace/output/cleaned_data.csv')
+# Load cleaned data from explore phase (promoted to shared datasets volume)
+df = pd.read_csv(f'/datasets/{dataset_id}/cleaned/data.csv')
 print(f"Columns: {df.columns.tolist()}")
 ```
 

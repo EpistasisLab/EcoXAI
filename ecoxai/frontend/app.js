@@ -47,7 +47,7 @@ const state = {
   skillDraft: null,
   skillsLoaded: false,
   serverBudget: { totalCostUsd: 0, jobCount: 0 },
-  serverSettings: { budgetLimitUsd: 10 },
+  serverSettings: { budgetLimitUsd: 10, maxParallelJobs: 3 },
 };
 
 // ── WebSocket ─────────────────────────────────────────────────────────────────
@@ -91,6 +91,7 @@ function handleMessage(msg) {
     case 'JOB_UPDATE':
       state.jobs = msg.jobs || state.jobs;
       renderPipeline();
+      renderHypotheses();
       renderHypDetail();
       break;
 
@@ -111,6 +112,7 @@ function handleMessage(msg) {
         const detailJob = hyp ? findHypTestJob(hyp) : null;
         if (detailJob && detailJob.id === msg.jobId) renderHypDetail();
       }
+      loadHypotheses();
       break;
     }
 
@@ -600,6 +602,8 @@ function renderHypCard(h) {
   const id = h.hypothesis_id;
   const selected = state.selectedHypId === id ? ' selected' : '';
 
+  const activeJob = state.jobs.find(j => j._hypothesisId === id && j.status === 'in-progress');
+
   const conf = h.confidence_score != null
     ? `<span class="hyp-conf">conf ${(h.confidence_score * 100).toFixed(0)}%</span>`
     : '';
@@ -616,12 +620,21 @@ function renderHypCard(h) {
     importanceHtml = `<span class="importance-actual ${match ? 'match' : 'miss'}">actual: ${h.actual_importance.toFixed(3)}${h.expected_importance != null ? ` / exp: ${h.expected_importance.toFixed(3)}` : ''}</span>`;
   }
 
+  const runningHtml = activeJob
+    ? `<span class="hyp-running"><span class="spinner" style="width:9px;height:9px;border-width:1.5px"></span> testing</span>`
+    : '';
+
+  const hint = !selected
+    ? `<span class="hyp-hint">▸ log &amp; artifacts</span>`
+    : '';
+
   return `
     <div class="hyp-card${selected}" onclick="app.selectHyp(${id})">
       <div class="hyp-text">${escHtml(h.hypothesis_text)}</div>
       <div class="hyp-meta">
         <span class="status-badge ${escHtml(h.status || 'proposed')}">${escHtml(h.status || 'proposed')}</span>
-        ${conf}${type}${feat}${importanceHtml}
+        ${conf}${type}${feat}${importanceHtml}${runningHtml}
+        <span style="flex:1"></span>${hint}
       </div>
     </div>`;
 }
@@ -848,6 +861,7 @@ function applySettingsToForm() {
   document.getElementById('s-hyp-limit').value    = settings.hypLimit;
   document.getElementById('s-hyp-refresh').value  = settings.hypRefresh;
   document.getElementById('s-autoscroll').checked = settings.autoScroll;
+  document.getElementById('s-max-parallel-jobs').value = state.serverSettings.maxParallelJobs ?? 3;
   document.getElementById('s-budget-limit').value = state.serverSettings.budgetLimitUsd ?? 10;
   renderBudgetStatus();
 }
@@ -1062,14 +1076,18 @@ window.app = {
       connectWS();
     }
 
-    // Persist budget limit to backend
+    // Persist settings to backend
     const budgetLimitUsd = parseFloat(document.getElementById('s-budget-limit').value);
-    if (!isNaN(budgetLimitUsd) && budgetLimitUsd >= 0) {
+    const maxParallelJobs = parseInt(document.getElementById('s-max-parallel-jobs').value);
+    const backendBody = {};
+    if (!isNaN(budgetLimitUsd) && budgetLimitUsd >= 0) backendBody.budgetLimitUsd = budgetLimitUsd;
+    if (!isNaN(maxParallelJobs) && maxParallelJobs >= 1) backendBody.maxParallelJobs = maxParallelJobs;
+    if (Object.keys(backendBody).length) {
       try {
         const resp = await fetch(`${apiBase()}/settings`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ budgetLimitUsd }),
+          body: JSON.stringify(backendBody),
         });
         const data = await resp.json();
         if (data.settings) { state.serverSettings = data.settings; renderBudgetStatus(); }

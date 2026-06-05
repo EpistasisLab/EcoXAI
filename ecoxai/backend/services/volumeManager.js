@@ -196,6 +196,60 @@ class VolumeManager {
   }
 
   /**
+   * Copy cleaned_data.csv from an explore job's workspace to the shared datasets volume.
+   * Stores it at /datasets/{datasetId}/cleaned/data.csv so downstream stages can read it.
+   * @param {string} datasetId - Dataset ID
+   * @param {string} jobId - Completed explore job ID
+   */
+  async copyCleanedDatasetToVolume(datasetId, jobId) {
+    try {
+      const content = await this.readArtifact(jobId, 'cleaned_data.csv');
+
+      const pack = tar.pack();
+      const chunks = [];
+      const packFinished = new Promise((resolve, reject) => {
+        pack.on('data', chunk => chunks.push(chunk));
+        pack.on('end', resolve);
+        pack.on('error', reject);
+      });
+
+      await new Promise((resolve, reject) => {
+        pack.entry({ name: 'cleaned/data.csv', size: content.length }, content, err => {
+          if (err) reject(err); else resolve();
+        });
+      });
+      pack.finalize();
+      await packFinished;
+      const tarBuffer = Buffer.concat(chunks);
+
+      const container = await docker.createContainer({
+        Image: 'alpine',
+        Cmd: ['sh', '-c', `mkdir -p /datasets/${datasetId}/cleaned && tar -xf - -C /datasets/${datasetId}`],
+        HostConfig: { Binds: [`${DATASETS_VOLUME}:/datasets`] },
+        OpenStdin: true,
+        StdinOnce: true,
+        AttachStdin: true,
+        AttachStdout: true,
+        AttachStderr: true,
+      });
+
+      const stream = await container.attach({ stream: true, stdin: true, stdout: true, stderr: true, hijack: true });
+      await container.start();
+      stream.write(tarBuffer);
+      stream.end();
+      const result = await container.wait();
+      if (result.StatusCode !== 0) throw new Error(`Container exited with code ${result.StatusCode}`);
+      await container.remove();
+
+      console.log(`✓ Copied cleaned_data.csv to datasets volume for ${datasetId} (${content.length} bytes)`);
+      return true;
+    } catch (error) {
+      console.error(`Error copying cleaned dataset to volume for ${datasetId}:`, error.message);
+      return false;
+    }
+  }
+
+  /**
    * Remove a dataset file from the shared datasets volume
    * @param {string} datasetId - Dataset ID
    * @param {string} filename - Original filename

@@ -32,8 +32,10 @@ import numpy as np
 import json
 import os
 
-# Load cleaned data from explore phase
-df = pd.read_csv('/workspace/output/cleaned_data.csv')
+dataset_id = os.environ.get('DATASET_ID', '')
+
+# Load cleaned data from explore phase (promoted to shared datasets volume)
+df = pd.read_csv(f'/datasets/{dataset_id}/cleaned/data.csv')
 
 # Load hypothesis — match task hypothesis text against next_hypothesis.json
 hypotheses = []

@@ -68,14 +68,15 @@ function loadState() {
         loaded.jobs = loaded.jobs.map(j => ({ ...j, selectedSkills: j.selectedSkills || [], skillsInvoked: j.skillsInvoked || [] }));
       }
       loaded.budget = loaded.budget || { totalCostUsd: 0, jobCount: 0 };
-      loaded.settings = loaded.settings || { budgetLimitUsd: 10 };
+      loaded.settings = loaded.settings || { budgetLimitUsd: 10, maxParallelJobs: 3 };
+      if (loaded.settings.maxParallelJobs === undefined) loaded.settings.maxParallelJobs = 3;
       console.log(`Loaded state: ${loaded.jobs?.length || 0} jobs, ${Object.keys(loaded.datasets || {}).length} datasets`);
       return loaded;
     }
   } catch (error) {
     console.error('Failed to load state:', error.message);
   }
-  return { jobs: [], datasets: {}, budget: { totalCostUsd: 0, jobCount: 0 }, settings: { budgetLimitUsd: 10 } };
+  return { jobs: [], datasets: {}, budget: { totalCostUsd: 0, jobCount: 0 }, settings: { budgetLimitUsd: 10, maxParallelJobs: 3 } };
 }
 
 let state = loadState();
@@ -98,7 +99,7 @@ wss.on('connection', (ws) => {
     datasets: Object.values(state.datasets),
     pipeline: orchestrator.getStatus(),
     budget: state.budget || { totalCostUsd: 0, jobCount: 0 },
-    settings: state.settings || { budgetLimitUsd: 10 },
+    settings: state.settings || { budgetLimitUsd: 10, maxParallelJobs: 3 },
   }));
   ws.on('close', () => clients.delete(ws));
   ws.on('error', (err) => { console.warn('[WS] Client error:', err.message); clients.delete(ws); });
@@ -197,6 +198,7 @@ orchestrator.init({
   updateJob,
   startJobExecution: routeDeps.startJobExecution,
   dbManager,
+  volumeManager,
 });
 
 // ── Mount routes ──────────────────────────────────────────────────────────────
@@ -229,12 +231,17 @@ app.get('/api/settings', (req, res) => {
 });
 
 app.put('/api/settings', (req, res) => {
-  if (!state.settings) state.settings = { budgetLimitUsd: 10 };
-  const { budgetLimitUsd } = req.body;
+  if (!state.settings) state.settings = { budgetLimitUsd: 10, maxParallelJobs: 3 };
+  const { budgetLimitUsd, maxParallelJobs } = req.body;
   if (budgetLimitUsd !== undefined) {
     const limit = parseFloat(budgetLimitUsd);
     if (isNaN(limit) || limit < 0) return res.status(400).json({ success: false, error: 'budgetLimitUsd must be a non-negative number' });
     state.settings.budgetLimitUsd = limit;
+  }
+  if (maxParallelJobs !== undefined) {
+    const limit = parseInt(maxParallelJobs);
+    if (isNaN(limit) || limit < 1) return res.status(400).json({ success: false, error: 'maxParallelJobs must be a positive integer' });
+    state.settings.maxParallelJobs = limit;
   }
   saveState();
   broadcast({ type: 'SETTINGS_UPDATE', settings: state.settings });

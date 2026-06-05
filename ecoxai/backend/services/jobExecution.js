@@ -45,6 +45,16 @@ async function startJobExecution(deps, jobId, options = {}) {
     };
   }
 
+  const maxParallelJobs = state.settings?.maxParallelJobs ?? 3;
+  const runningCount = state.jobs.filter(j => j.status === 'in-progress').length;
+  if (runningCount >= maxParallelJobs) {
+    return {
+      success: false,
+      error: `Max parallel jobs (${maxParallelJobs}) already running. Wait for a job to finish or raise the limit in Settings.`,
+      status: 429,
+    };
+  }
+
   try {
     await volumeManager.createWorkspaceVolume(jobId);
 
