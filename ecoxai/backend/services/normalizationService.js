@@ -309,35 +309,6 @@ class NormalizationService {
     return provenance;
   }
 
-  /**
-   * Get normalization status for a dataset
-   *
-   * @param {string} datasetId - Dataset identifier
-   * @returns {Promise<Object|null>} Normalization status or null if not normalized
-   */
-  async getNormalizationStatus(datasetId) {
-    const workDir = path.join(this.tmpDir, datasetId);
-    const normalizedDir = path.join(workDir, 'normalized');
-
-    try {
-      const [structure, semantic, confidence, provenance] = await Promise.all([
-        fs.readFile(path.join(normalizedDir, 'structure.json'), 'utf8').then(JSON.parse),
-        fs.readFile(path.join(normalizedDir, 'semantic.json'), 'utf8').then(JSON.parse),
-        fs.readFile(path.join(normalizedDir, 'confidence.json'), 'utf8').then(JSON.parse),
-        fs.readFile(path.join(normalizedDir, 'provenance.json'), 'utf8').then(JSON.parse)
-      ]);
-
-      return {
-        exists: true,
-        structure,
-        semantic,
-        confidence,
-        provenance
-      };
-    } catch (err) {
-      return null;
-    }
-  }
 }
 
 // Export singleton instance

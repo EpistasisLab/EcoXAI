@@ -19,7 +19,6 @@ const jobExecution = require('./services/jobExecution');
 const createDatasetsRoutes = require('./routes/datasets');
 const createJobsRoutes = require('./routes/jobs');
 const createHypothesesRoutes = require('./routes/hypotheses');
-const createObservabilityRoutes = require('./routes/observability');
 const createPipelineRoutes = require('./routes/pipeline');
 
 // ── Error handling ────────────────────────────────────────────────────────────
@@ -68,15 +67,17 @@ function loadState() {
       if (loaded.jobs) {
         loaded.jobs = loaded.jobs.map(j => ({ ...j, selectedSkills: j.selectedSkills || [], skillsInvoked: j.skillsInvoked || [] }));
       }
-      loaded.budget = loaded.budget || { totalCostUsd: 0, jobCount: 0, sessions: [] };
-      loaded.settings = loaded.settings || { budgetLimitUsd: 10 };
+      loaded.budget = loaded.budget || { totalCostUsd: 0, jobCount: 0 };
+      loaded.settings = loaded.settings || { budgetLimitUsd: 10, maxParallelJobs: 3, maxHypothesisCycles: 2 };
+      if (loaded.settings.maxParallelJobs === undefined) loaded.settings.maxParallelJobs = 3;
+      if (loaded.settings.maxHypothesisCycles === undefined) loaded.settings.maxHypothesisCycles = 2;
       console.log(`Loaded state: ${loaded.jobs?.length || 0} jobs, ${Object.keys(loaded.datasets || {}).length} datasets`);
       return loaded;
     }
   } catch (error) {
     console.error('Failed to load state:', error.message);
   }
-  return { jobs: [], datasets: {}, budget: { totalCostUsd: 0, jobCount: 0, sessions: [] }, settings: { budgetLimitUsd: 10 } };
+  return { jobs: [], datasets: {}, budget: { totalCostUsd: 0, jobCount: 0 }, settings: { budgetLimitUsd: 10, maxParallelJobs: 3, maxHypothesisCycles: 2 } };
 }
 
 let state = loadState();
@@ -98,8 +99,8 @@ wss.on('connection', (ws) => {
     jobs: state.jobs,
     datasets: Object.values(state.datasets),
     pipeline: orchestrator.getStatus(),
-    budget: state.budget || { totalCostUsd: 0, jobCount: 0, sessions: [] },
-    settings: state.settings || { budgetLimitUsd: 10 },
+    budget: state.budget || { totalCostUsd: 0, jobCount: 0 },
+    settings: state.settings || { budgetLimitUsd: 10, maxParallelJobs: 3, maxHypothesisCycles: 2 },
   }));
   ws.on('close', () => clients.delete(ws));
   ws.on('error', (err) => { console.warn('[WS] Client error:', err.message); clients.delete(ws); });
@@ -153,9 +154,7 @@ function createJobFromData(data, index) {
   return {
     id: data.id || `J${Date.now()}_${index}`,
     title: data.title || `Uploaded Job ${index + 1}`,
-    priority: data.priority || 'Medium',
     status: 'todo',
-    assignee: null,
     prompt: data.prompt || '',
     datasetId: data.datasetId || null,
     selectedSkills: [],
@@ -165,7 +164,6 @@ function createJobFromData(data, index) {
     exitCode: null,
     startedAt: null,
     completedAt: null,
-    containerId: null,
     createdAt: new Date().toISOString()
   };
 }
@@ -187,7 +185,6 @@ const routeDeps = {
   normalizationService,
   upload,
   orchestrator,
-  stateRepo: () => null  // lean version: no PostgreSQL stateRepo
 };
 
 routeDeps.startJobExecution = (jobId, opts) =>
@@ -202,13 +199,13 @@ orchestrator.init({
   updateJob,
   startJobExecution: routeDeps.startJobExecution,
   dbManager,
+  volumeManager,
 });
 
 // ── Mount routes ──────────────────────────────────────────────────────────────
 app.use('/api', createDatasetsRoutes(routeDeps));
 app.use('/api', createJobsRoutes(routeDeps));
 app.use('/api', createHypothesesRoutes(routeDeps));
-app.use('/api', createObservabilityRoutes({ dbManager }));
 app.use('/api', createPipelineRoutes({ orchestrator }));
 
 // Health check
@@ -219,11 +216,11 @@ app.get('/api/health', async (req, res) => {
 
 // Budget
 app.get('/api/budget', (req, res) => {
-  res.json({ success: true, budget: state.budget || { totalCostUsd: 0, jobCount: 0, sessions: [] } });
+  res.json({ success: true, budget: state.budget || { totalCostUsd: 0, jobCount: 0 } });
 });
 
 app.post('/api/budget/reset', (req, res) => {
-  state.budget = { totalCostUsd: 0, jobCount: 0, sessions: [] };
+  state.budget = { totalCostUsd: 0, jobCount: 0 };
   saveState();
   broadcast({ type: 'BUDGET_UPDATE', budget: state.budget });
   res.json({ success: true, budget: state.budget });
@@ -235,12 +232,22 @@ app.get('/api/settings', (req, res) => {
 });
 
 app.put('/api/settings', (req, res) => {
-  if (!state.settings) state.settings = { budgetLimitUsd: 10 };
-  const { budgetLimitUsd } = req.body;
+  if (!state.settings) state.settings = { budgetLimitUsd: 10, maxParallelJobs: 3, maxHypothesisCycles: 2 };
+  const { budgetLimitUsd, maxParallelJobs, maxHypothesisCycles } = req.body;
   if (budgetLimitUsd !== undefined) {
     const limit = parseFloat(budgetLimitUsd);
     if (isNaN(limit) || limit < 0) return res.status(400).json({ success: false, error: 'budgetLimitUsd must be a non-negative number' });
     state.settings.budgetLimitUsd = limit;
+  }
+  if (maxParallelJobs !== undefined) {
+    const limit = parseInt(maxParallelJobs);
+    if (isNaN(limit) || limit < 1) return res.status(400).json({ success: false, error: 'maxParallelJobs must be a positive integer' });
+    state.settings.maxParallelJobs = limit;
+  }
+  if (maxHypothesisCycles !== undefined) {
+    const val = parseInt(maxHypothesisCycles, 10);
+    if (isNaN(val) || val < 0) return res.status(400).json({ success: false, error: 'maxHypothesisCycles must be a non-negative integer' });
+    state.settings.maxHypothesisCycles = val;
   }
   saveState();
   broadcast({ type: 'SETTINGS_UPDATE', settings: state.settings });
@@ -287,7 +294,6 @@ function watchDatasetFolder() {
 
       try {
         const buffer = fs.readFileSync(filePath);
-        const FormData = require('stream');
 
         // Simulate upload by directly processing
         const datasetId = `dataset_${Date.now()}`;

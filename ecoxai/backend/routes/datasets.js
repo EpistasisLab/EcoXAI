@@ -157,20 +157,6 @@ function createDatasetsRoutes(deps) {
     }
   });
 
-  router.get('/datasets', (req, res) => {
-    const datasets = Object.values(state.datasets).map(ds => ({
-      id: ds.id, filename: ds.filename, size: ds.size,
-      uploadedAt: ds.uploadedAt, type: ds.type,
-      recordCount: ds.recordCount, columnCount: ds.columnCount,
-      normalization: ds.normalization ? {
-        confidence: ds.normalization.confidence,
-        documentType: ds.normalization.documentType,
-        domain: ds.normalization.semanticMetadata?.domain
-      } : null
-    }));
-    res.json({ datasets });
-  });
-
   attachAdvancedDatasetRoutes(router, { state, saveState, broadcast, volumeManager, dbManager });
 
   return router;

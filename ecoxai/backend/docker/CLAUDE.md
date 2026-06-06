@@ -40,14 +40,16 @@ See `normalized-workflow.md` for the complete dataset workflow.
 
 ## Skills
 
-When `SELECTED_SKILLS` is provided:
-1. Load each referenced skill from `~/.claude/skills/`
-2. Apply the skill methodology where relevant
+When `SELECTED_SKILLS` is provided (format: `namespace:skill-name,...`):
+1. Load each referenced skill from `/workspace/.claude/skills/{skill-name}/SKILL.md`
+   — `{skill-name}` is the part **after** the `:` in each skill ID
+   — e.g., `public:pipeline-hypothesize` → `/workspace/.claude/skills/pipeline-hypothesize/SKILL.md`
+2. Read the SKILL.md file fully and follow its instructions
 3. Print:
 
    `SKILL_INVOKED: <skill_id>`
 
-   whenever a skill framework materially influences the analysis
+   when a skill framework materially influences the analysis (include the full `namespace:skill-name` form)
 
 Skills provide specialized guidance but do not override this file.
 

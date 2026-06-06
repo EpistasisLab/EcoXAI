@@ -57,4 +57,4 @@ async function saveJobAssets({ job, artifacts, sessionLog }) {
   return { assetDir, filesWritten };
 }
 
-module.exports = { saveJobAssets, getAssetDir };
+module.exports = { saveJobAssets };

@@ -1,37 +1,54 @@
-#!/usr/bin/env bash
-#
-# ⚠️ TEMPORARY / PROVISIONAL — NOT the canonical entrypoint.
-# Reconstructed alongside the stopgap Dockerfile (the repo shipped neither).
-# Replace with the original/authoritative ecoxai-agent build when available.
-#
-# ecoxai-agent entrypoint — drives one headless Claude Code run per container.
-#
-# The backend injects the prompt via the TASK env var and also writes it to
-# /workspace/task.txt. We work in /workspace, where CLAUDE.md and
-# .claude/skills/ have already been placed, and stream Claude Code's
-# stream-json events to stdout for the backend to parse.
+#!/bin/bash
+set -e
 
-set -uo pipefail
+# Read task from environment or file
+TASK="${TASK:-$(cat /workspace/task.txt 2>/dev/null || echo 'No task provided')}"
 
-cd /workspace
+# Obtain Kerberos ticket for CSMC domain if credentials are provided
+if [ -n "${KRB5_USER}" ] && [ -n "${KRB5_PASSWORD}" ]; then
+    echo "=== Obtaining Kerberos ticket for ${KRB5_USER}@CSMC.EDU ==="
+    echo "${KRB5_PASSWORD}" | kinit -l 8h "${KRB5_USER}@CSMC.EDU" 2>&1 && \
+        echo "Kerberos ticket obtained successfully" || \
+        echo "WARNING: kinit failed — CS_Analyze connection may not work"
+fi
+
+# Create output directory if it doesn't exist
 mkdir -p /workspace/output
 
-# Resolve the task prompt: prefer $TASK, fall back to task.txt.
-TASK_PROMPT="${TASK:-}"
-if [ -z "${TASK_PROMPT}" ] && [ -f /workspace/task.txt ]; then
-  TASK_PROMPT="$(cat /workspace/task.txt)"
+# Change to workspace directory
+cd /workspace
+
+# Display task for logging
+echo "=== ECOXAI AGENT STARTING ==="
+echo "Task: $TASK"
+echo "=== EXECUTING ==="
+echo ""
+
+# Run Claude Code with the task showing full thought process
+# --print for non-interactive output
+# --output-format stream-json --verbose gives detailed JSON logs with every tool call
+# --dangerously-skip-permissions bypasses permission prompts
+# Output raw JSON stream - backend will parse and format it
+# NOTE: Prompt must come BEFORE --allowedTools or it won't be recognized
+
+MODEL_FLAG=""
+if [ -n "${CLAUDE_MODEL}" ]; then
+    MODEL_FLAG="--model ${CLAUDE_MODEL}"
 fi
 
-if [ -z "${TASK_PROMPT}" ]; then
-  echo '{"type":"result","subtype":"error","error_message":"No TASK provided to ecoxai-agent"}'
-  exit 1
+claude $MODEL_FLAG --print --output-format stream-json --verbose --dangerously-skip-permissions "$TASK" --allowedTools "Bash(python*),Bash(pip*),Read,Write,Edit,Glob,Grep"
+
+# Capture exit code
+EXIT_CODE=$?
+
+echo ""
+echo "=== AGENT COMPLETED ==="
+echo "Exit code: $EXIT_CODE"
+
+# List any generated output files
+if [ -d "/workspace/output" ] && [ "$(ls -A /workspace/output 2>/dev/null)" ]; then
+    echo "Generated files:"
+    ls -la /workspace/output/
 fi
 
-# Hand off to Claude Code. exec so the CLI's exit code becomes the
-# container exit code (the backend treats non-zero + no artifacts as failed).
-exec claude \
-  --print \
-  --output-format stream-json \
-  --verbose \
-  --dangerously-skip-permissions \
-  "${TASK_PROMPT}"
+exit $EXIT_CODE

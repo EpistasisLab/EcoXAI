@@ -22,11 +22,6 @@ if (!fs.existsSync(WIKIS_DIR)) {
   fs.mkdirSync(WIKIS_DIR, { recursive: true });
 }
 
-// Helper to get storageService without circular require at module load
-function getStorage() {
-  try { return require('./storageService'); } catch { return null; }
-}
-
 class WikiService {
   constructor() {
     this.anthropic = null;
@@ -40,27 +35,32 @@ class WikiService {
     if (useFoundry) {
       const apiKey = process.env.ANTHROPIC_FOUNDRY_API_KEY;
       const resource = process.env.ANTHROPIC_FOUNDRY_RESOURCE || 'cbm-staff-gpt4';
-      const model = process.env.CLAUDE_MODEL || process.env.ANTHROPIC_DEFAULT_SONNET_MODEL || 'claude-sonnet-4-5';
-      if (!apiKey) return;
-      try {
-        const AnthropicFoundry = require('@anthropic-ai/foundry-sdk').default;
-        this.anthropic = new AnthropicFoundry({ apiKey, resource });
-        this.model = model;
-      } catch (e) {
-        console.warn('[Wiki] Failed to init Foundry client:', e.message);
+      const model = process.env.CLAUDE_MODEL || process.env.ANTHROPIC_DEFAULT_SONNET_MODEL || 'claude-sonnet-4-6';
+      if (!apiKey) {
+        console.warn('[Wiki] CLAUDE_CODE_USE_FOUNDRY=1 but ANTHROPIC_FOUNDRY_API_KEY not set — falling back to direct API');
+      } else {
+        try {
+          const AnthropicFoundry = require('@anthropic-ai/foundry-sdk').default;
+          this.anthropic = new AnthropicFoundry({ apiKey, resource });
+          this.model = model;
+          return;
+        } catch (e) {
+          console.warn('[Wiki] Failed to init Foundry client:', e.message);
+        }
       }
-    } else {
-      const apiKey = process.env.ANTHROPIC_API_KEY;
-      if (!apiKey) return;
-      try {
-        const Anthropic = require('@anthropic-ai/sdk');
-        const clientOpts = { apiKey };
-        if (process.env.ANTHROPIC_BASE_URL) clientOpts.baseURL = process.env.ANTHROPIC_BASE_URL;
-        this.anthropic = new Anthropic(clientOpts);
-        this.model = process.env.CLAUDE_MODEL || 'claude-sonnet-4-5-20241022';
-      } catch (e) {
-        console.warn('[Wiki] Failed to init Anthropic client:', e.message);
-      }
+    }
+
+    // Direct Anthropic API (default or Foundry fallback)
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) return;
+    try {
+      const Anthropic = require('@anthropic-ai/sdk');
+      const clientOpts = { apiKey };
+      if (process.env.ANTHROPIC_BASE_URL) clientOpts.baseURL = process.env.ANTHROPIC_BASE_URL;
+      this.anthropic = new Anthropic(clientOpts);
+      this.model = process.env.CLAUDE_MODEL || process.env.ANTHROPIC_DEFAULT_SONNET_MODEL || 'claude-sonnet-4-6';
+    } catch (e) {
+      console.warn('[Wiki] Failed to init Anthropic client:', e.message);
     }
   }
 
@@ -76,45 +76,17 @@ class WikiService {
     return dir;
   }
 
-  async _read(datasetId, filename) {
-    const storage = getStorage();
-    if (storage && storage._healthy) {
-      try {
-        const content = await storage.getWikiFile(datasetId, filename);
-        if (content !== null) return content;
-      } catch { /* fall through to local */ }
-    }
-    // Local filesystem fallback
+  _read(datasetId, filename) {
     const fp = path.join(this._wikiDir(datasetId), filename);
     return fs.existsSync(fp) ? fs.readFileSync(fp, 'utf-8') : null;
   }
 
-  async _write(datasetId, filename, content) {
-    const storage = getStorage();
-    if (storage && storage._healthy) {
-      try {
-        await storage.writeWikiFile(datasetId, filename, content);
-        return;
-      } catch (err) {
-        console.warn(`[Wiki] SeaweedFS write failed, using local fallback:`, err.message);
-      }
-    }
-    // Local filesystem fallback
+  _write(datasetId, filename, content) {
     this._ensureDir(datasetId);
     fs.writeFileSync(path.join(this._wikiDir(datasetId), filename), content, 'utf-8');
   }
 
-  async _append(datasetId, filename, content) {
-    const storage = getStorage();
-    if (storage && storage._healthy) {
-      try {
-        await storage.appendWikiFile(datasetId, filename, content);
-        return;
-      } catch (err) {
-        console.warn(`[Wiki] SeaweedFS append failed, using local fallback:`, err.message);
-      }
-    }
-    // Local filesystem fallback
+  _append(datasetId, filename, content) {
     this._ensureDir(datasetId);
     fs.appendFileSync(path.join(this._wikiDir(datasetId), filename), content, 'utf-8');
   }

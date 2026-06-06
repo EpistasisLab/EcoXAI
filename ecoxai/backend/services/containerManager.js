@@ -14,7 +14,7 @@ function formatClaudeOutput(json) {
   switch (type) {
     case 'system':
       if (subtype === 'init') {
-        displayText = `\n━━━ Agent Session Initialized ━━━\nModel: ${json.model}\nPermission Mode: ${json.permissionMode}\n`;
+        displayText = `\n━━━ Agent Session Initialized ━━━\nModel: ${json.model}\n`;
         logData = { type: 'init', model: json.model, permissionMode: json.permissionMode, sandboxId: json.sandboxId };
       }
       break;
@@ -28,7 +28,7 @@ function formatClaudeOutput(json) {
         if (item.type === 'text') output += `\n💭 ${item.text}\n`;
         else if (item.type === 'thinking') { output += `\n🧠 Thinking: ${item.thinking}\n`; thinking = item.thinking; }
         else if (item.type === 'tool_use') {
-          output += `\n🔧 Tool: ${item.name}\n`;
+          output += `\n🔧 Tool: ${item.name} - Arguments: ${JSON.stringify(item.input)}\n`;
           toolCalls.push({ tool_id: item.id, tool_name: item.name, arguments: item.input });
         }
       }
@@ -113,8 +113,8 @@ class ExecutionLogBuffer {
 
   async flush() {
     try {
-      if (this.model || this.sandboxId) {
-        await dbManager.updateRun(this.runId, { model: this.model, sandbox_id: this.sandboxId, permission_mode: this.permissionMode });
+      if (this.model) {
+        await dbManager.updateRun(this.runId, { model: this.model });
       }
       if (this.steps.length > 0) await dbManager.createStepsBatch(this.steps);
       if (this.toolCalls.length > 0) await dbManager.createToolCallsBatch(this.toolCalls);
@@ -161,10 +161,12 @@ class ContainerManager {
       const { enhancedPrompt } = await prepareWorkspace(id, job, state, volumeManager);
 
       // Build environment variables
+      const backendPort = process.env.PORT || 8081;
       const envVars = [
         `TASK=${enhancedPrompt}`,
         `JOB_ID=${id}`,
         `DATASET_ID=${datasetId || ''}`,
+        `BACKEND_URL=http://host.docker.internal:${backendPort}`,
       ];
 
       if (datasetId && state?.datasets?.[datasetId]) {
@@ -182,6 +184,10 @@ class ContainerManager {
         } else {
           envVars.push(`DATASET_NORMALIZED=0`);
         }
+      }
+
+      if (selectedSkills && selectedSkills.length > 0) {
+        envVars.push(`SELECTED_SKILLS=${selectedSkills.join(',')}`);
       }
 
       if (process.env.CLAUDE_CODE_USE_FOUNDRY === '1') {

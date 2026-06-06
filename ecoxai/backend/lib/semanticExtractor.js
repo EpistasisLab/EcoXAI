@@ -71,7 +71,7 @@ function shouldUseLLM() {
 async function extractWithLLM(structure, contentResult) {
   console.log('[SemanticExtractor] Using LLM-based extraction');
 
-  // Initialize Anthropic client (matching orchestrator.js / hypothesisAgent.js pattern)
+  // Initialize Anthropic client
   const useFoundry = process.env.CLAUDE_CODE_USE_FOUNDRY === '1';
   let anthropic;
 
