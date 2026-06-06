@@ -344,9 +344,6 @@ function render3D(graph) {
       .linkColor((l) => RELATION_COLOR[l.relation] ?? "#7a869a")
       .linkWidth((l) => 0.4 + 2.6 * ((l.strength ?? 0) / maxStrength))
       .linkOpacity(0.4)
-      .linkDirectionalParticles((l) => Math.round(((l.strength ?? 0) / maxStrength) * 4))
-      .linkDirectionalParticleWidth(1.8)
-      .linkDirectionalParticleSpeed((l) => 0.002 + ((l.strength ?? 0) / maxStrength) * 0.008)
       .linkLabel((l) => `${linkId(l)} → ${tgtId(l)} · ${l.strength}`)
       .onNodeClick((n) => {
         const d = 120, r = 1 + d / Math.hypot(n.x || 1, n.y || 1, n.z || 1);
