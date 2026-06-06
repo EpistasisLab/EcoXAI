@@ -264,7 +264,7 @@ function renderPipeline() {
   list.innerHTML = stages.map(stage => {
     const ss = stageStatuses[stage.id];
     const status = ss?.status || 'idle';
-    const icon = { running: '⚡', completed: '✓', failed: '✗', waiting: '⏸', idle: '○' }[status] || '○';
+    const icon = { running: '⚡', completed: '✓', failed: '✗', waiting: '⏸', retrying: '↩', idle: '○' }[status] || '○';
     const selectedStage = state.selectedStageId === stage.id ? ' selected' : '';
 
     const skills = Array.isArray(stage.skill) ? stage.skill : [];
@@ -862,6 +862,7 @@ function applySettingsToForm() {
   document.getElementById('s-hyp-refresh').value  = settings.hypRefresh;
   document.getElementById('s-autoscroll').checked = settings.autoScroll;
   document.getElementById('s-max-parallel-jobs').value = state.serverSettings.maxParallelJobs ?? 3;
+  document.getElementById('s-max-hypothesis-cycles').value = state.serverSettings.maxHypothesisCycles ?? 2;
   document.getElementById('s-budget-limit').value = state.serverSettings.budgetLimitUsd ?? 10;
   renderBudgetStatus();
 }
@@ -1079,9 +1080,11 @@ window.app = {
     // Persist settings to backend
     const budgetLimitUsd = parseFloat(document.getElementById('s-budget-limit').value);
     const maxParallelJobs = parseInt(document.getElementById('s-max-parallel-jobs').value);
+    const maxHypothesisCycles = parseInt(document.getElementById('s-max-hypothesis-cycles').value);
     const backendBody = {};
     if (!isNaN(budgetLimitUsd) && budgetLimitUsd >= 0) backendBody.budgetLimitUsd = budgetLimitUsd;
     if (!isNaN(maxParallelJobs) && maxParallelJobs >= 1) backendBody.maxParallelJobs = maxParallelJobs;
+    if (!isNaN(maxHypothesisCycles) && maxHypothesisCycles >= 0) backendBody.maxHypothesisCycles = maxHypothesisCycles;
     if (Object.keys(backendBody).length) {
       try {
         const resp = await fetch(`${apiBase()}/settings`, {

@@ -53,12 +53,17 @@ Focus ONLY on this single hypothesis. Follow the pipeline-analyze skill instruct
 ];
 // ═══════════════════════════════════════════════════════
 
+const MAX_STAGE_RETRIES = 3;
+const RETRY_DELAY_MS = 5000;
+
 class Orchestrator extends EventEmitter {
   constructor() {
     super();
     this.autoMode = true;
     this.activeStages = new Map(); // datasetId -> { stageId, jobId, startedAt }
     this.hypothesisQueues = new Map(); // datasetId -> hypothesis[]
+    this.hypothesisCycles = new Map(); // datasetId -> regeneration count so far
+    this.stageRetryAttempts = new Map(); // `${datasetId}:${stageId}[:${hypothesisId}]` -> attempt count
     this.deps = null;
   }
 
@@ -94,21 +99,48 @@ class Orchestrator extends EventEmitter {
       if (!stageId) return;
       const hasArtifacts = Array.isArray(artifacts) && artifacts.length > 0;
       const succeeded = exitCode === 0 || hasArtifacts;
-      const status = succeeded ? 'completed' : 'failed';
-      this._updateActiveStage(datasetId, status, jobId);
-      this._broadcastStageUpdate(stageId, this._getStageName(stageId), status, jobId, datasetId);
 
       if (!succeeded) {
+        this._updateActiveStage(datasetId, 'failed', jobId);
         console.warn(`[Orchestrator] Stage ${stageId} failed (exit ${exitCode}, no artifacts) for dataset ${datasetId}`);
+
+        const job = (this.deps.state.jobs || []).find(j => j.id === jobId);
+        const hypothesisId = job?._hypothesisId ?? null;
+        const retryKey = hypothesisId ? `${datasetId}:${stageId}:${hypothesisId}` : `${datasetId}:${stageId}`;
+        const attempts = (this.stageRetryAttempts.get(retryKey) || 0) + 1;
+
+        if (attempts <= MAX_STAGE_RETRIES) {
+          this.stageRetryAttempts.set(retryKey, attempts);
+          console.log(`[Orchestrator] Scheduling retry ${attempts}/${MAX_STAGE_RETRIES} for stage ${stageId} in ${RETRY_DELAY_MS}ms`);
+          this._broadcastStageUpdate(stageId, this._getStageName(stageId), 'retrying', jobId, datasetId);
+          setTimeout(() => {
+            this._retryStage(stageId, datasetId, hypothesisId).catch(err =>
+              console.error(`[Orchestrator] Retry failed for ${stageId}:`, err.message)
+            );
+          }, RETRY_DELAY_MS);
+        } else {
+          this.stageRetryAttempts.delete(retryKey);
+          console.warn(`[Orchestrator] Stage ${stageId} permanently failed after ${MAX_STAGE_RETRIES} retries for dataset ${datasetId}`);
+          this._broadcastStageUpdate(stageId, this._getStageName(stageId), 'failed', jobId, datasetId);
+        }
         return;
       }
+
+      this._updateActiveStage(datasetId, 'completed', jobId);
+
+      // Clear retry counter on success
+      const job = (this.deps.state.jobs || []).find(j => j.id === jobId);
+      const hypothesisId = job?._hypothesisId ?? null;
+      const retryKey = hypothesisId ? `${datasetId}:${stageId}:${hypothesisId}` : `${datasetId}:${stageId}`;
+      this.stageRetryAttempts.delete(retryKey);
+
+      this._broadcastStageUpdate(stageId, this._getStageName(stageId), 'completed', jobId, datasetId);
       if (exitCode !== 0) {
         console.warn(`[Orchestrator] Stage ${stageId} exited ${exitCode} but produced ${artifacts.length} artifact(s) — treating as completed`);
       }
 
       // Feed test results back to hypothesis statuses and advance per-hypothesis queue
       if (stageId === 'analyze') {
-        const job = (this.deps.state.jobs || []).find(j => j.id === jobId);
         this.deps.broadcast({ type: 'DATABASE_UPDATE', entity: 'hypotheses' });
         this._processTestResults(datasetId, artifacts, job?._hypothesisId).catch(err =>
           console.warn('[Orchestrator] Verdict processing failed:', err.message)
@@ -136,7 +168,8 @@ class Orchestrator extends EventEmitter {
       console.log(`[Orchestrator] hypotheses_extracted: ${count} for dataset ${datasetId}`);
       const { dbManager } = this.deps;
       if (!dbManager) return;
-      const hypotheses = await dbManager.getHypothesesForDataset(datasetId);
+      const hypotheses = (await dbManager.getHypothesesForDataset(datasetId))
+        .filter(h => h.status === 'proposed');
       if (!hypotheses.length) return;
       this.hypothesisQueues.set(datasetId, [...hypotheses]);
       await this._runNextHypothesisAnalysis(datasetId);
@@ -151,13 +184,36 @@ class Orchestrator extends EventEmitter {
     const queue = this.hypothesisQueues.get(datasetId);
     if (!queue || !queue.length) {
       this.hypothesisQueues.delete(datasetId);
-      console.log(`[Orchestrator] All hypotheses tested for dataset ${datasetId}`);
+      const done = (this.hypothesisCycles.get(datasetId) || 0) + 1;
+      const max = this.deps.state.settings?.maxHypothesisCycles ?? 2;
+      if (done <= max) {
+        console.log(`[Orchestrator] All hypotheses tested. Regeneration cycle ${done}/${max} for dataset ${datasetId}`);
+        this.hypothesisCycles.set(datasetId, done);
+        await this._runHypothesizeWithContext(datasetId);
+      } else {
+        console.log(`[Orchestrator] All hypotheses tested. Reached max regeneration cycles (${max}) for dataset ${datasetId}`);
+        this.hypothesisCycles.delete(datasetId);
+      }
       return;
     }
     const hypothesis = queue.shift();
     const stage = PIPELINE_STAGES.find(s => s.id === 'analyze');
     console.log(`[Orchestrator] Testing hypothesis ${hypothesis.hypothesis_id} (${queue.length} remaining) for dataset ${datasetId}`);
     await this._runStage(stage, { datasetId, hypothesis });
+  }
+
+  async _runHypothesizeWithContext(datasetId) {
+    const stage = PIPELINE_STAGES.find(s => s.id === 'hypothesize');
+    const { dbManager } = this.deps;
+    const context = { datasetId };
+    if (dbManager) {
+      const all = await dbManager.getHypothesesForDataset(datasetId);
+      const tested = all.filter(h => ['supported', 'rejected', 'needs_more_data'].includes(h.status));
+      if (tested.length) {
+        context.previousHypotheses = tested.map(h => `- ${h.hypothesis_text} (${h.status})`).join('\n');
+      }
+    }
+    await this._runStage(stage, context);
   }
 
   async _maybeAdvance(trigger, context) {
@@ -189,6 +245,9 @@ class Orchestrator extends EventEmitter {
       let prompt = stage.prompt.replace(/\{datasetId\}/g, datasetId);
       if (hypothesis) {
         prompt = prompt.replace(/\{hypothesis_text\}/g, hypothesis.hypothesis_text || '');
+      }
+      if (context.previousHypotheses) {
+        prompt += `\n\nPreviously tested hypotheses — do NOT regenerate these:\n${context.previousHypotheses}`;
       }
 
       const jobTitle = hypothesis?.feature_name
@@ -295,6 +354,35 @@ class Orchestrator extends EventEmitter {
       if (!alreadyStarted) {
         console.log(`[Orchestrator] Resume: advancing ${datasetId} from ${job._stageId} → ${nextStage.id}`);
         await this._runStage(nextStage, { datasetId });
+      }
+    }
+
+    // Resume any paused hypothesis analysis queues (in-memory queue survived the pause)
+    for (const [datasetId, queue] of this.hypothesisQueues.entries()) {
+      if (!queue || !queue.length) continue;
+      const hasRunning = jobs.some(j => j._stageId === 'analyze' && j.datasetId === datasetId && j.status === 'running');
+      if (!hasRunning) {
+        console.log(`[Orchestrator] Resume: resuming in-memory hypothesis queue for ${datasetId} (${queue.length} remaining)`);
+        await this._runNextHypothesisAnalysis(datasetId);
+      }
+    }
+
+    // Rebuild hypothesis queue from DB for datasets where the queue was lost (e.g. server restart)
+    if (this.deps.dbManager) {
+      const datasetsWithHypothesizeComplete = [...new Set(
+        jobs.filter(j => j._stageId === 'hypothesize' && j.status === 'completed').map(j => j.datasetId)
+      )];
+      for (const datasetId of datasetsWithHypothesizeComplete) {
+        if (this.hypothesisQueues.has(datasetId)) continue; // already handled above
+        const hasRunning = jobs.some(j => j._stageId === 'analyze' && j.datasetId === datasetId && j.status === 'running');
+        if (hasRunning) continue;
+        const allHypotheses = await this.deps.dbManager.getHypothesesForDataset(datasetId);
+        const untested = allHypotheses.filter(h => h.status === 'proposed');
+        if (untested.length > 0) {
+          console.log(`[Orchestrator] Resume: rebuilding hypothesis queue for ${datasetId} from DB (${untested.length} untested)`);
+          this.hypothesisQueues.set(datasetId, [...untested]);
+          await this._runNextHypothesisAnalysis(datasetId);
+        }
       }
     }
   }
@@ -422,6 +510,16 @@ class Orchestrator extends EventEmitter {
         console.warn('[Orchestrator] _processTestResults (report-based) error:', err.message);
       }
     }
+  }
+
+  async _retryStage(stageId, datasetId, hypothesisId) {
+    const stage = PIPELINE_STAGES.find(s => s.id === stageId);
+    if (!stage) return;
+    if (hypothesisId && this.deps.dbManager) {
+      const hyp = await this.deps.dbManager.getHypothesis(hypothesisId);
+      if (hyp) { await this._runStage(stage, { datasetId, hypothesis: hyp }); return; }
+    }
+    await this._runStage(stage, { datasetId });
   }
 
   // ── Internal helpers ──────────────────────────────────

@@ -245,6 +245,8 @@ html, body { height: 100%; font-family: 'Segoe UI', system-ui, sans-serif; backg
 .stage-item.completed { border-left-color: var(--green); }
 .stage-item.failed { border-left-color: var(--red); }
 .stage-item.waiting { border-left-color: var(--blue); }
+.stage-item.retrying { border-left-color: var(--yellow); background: rgba(251,191,36,0.05); }
+.stage-item.retrying .stage-status { color: var(--yellow); }
 .stage-item.selected { border-left-color: var(--accent); background: rgba(99,102,241,0.08); }
 .stage-header { display: flex; align-items: center; gap: 10px; padding: 8px 12px; }
 .stage-icon { font-size: 14px; width: 18px; text-align: center; }
