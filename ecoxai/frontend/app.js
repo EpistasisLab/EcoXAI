@@ -207,8 +207,9 @@ async function vizInit() {
 async function vizLoadRuns() {
   const dsId = document.getElementById('viz-dataset').value;
   const runSel = document.getElementById('viz-run');
-  let jobs = [];
-  try { jobs = (await (await fetch(`${apiBase()}/jobs`)).json()).jobs || []; } catch {}
+  // Jobs are no longer exposed via REST; the WebSocket FULL_STATE/JOB_UPDATE
+  // messages keep state.jobs current, so read from there.
+  const jobs = state.jobs || [];
   const runs = jobs
     .filter(j => j._stageId === 'analyze' && j.datasetId === dsId &&
                  (j.status === 'completed' || (j.artifacts || []).length))
