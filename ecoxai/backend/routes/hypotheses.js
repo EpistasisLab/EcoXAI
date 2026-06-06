@@ -18,6 +18,47 @@ function createHypothesesRoutes({ state, saveState, broadcast, dbManager }) {
     }
   });
 
+  // POST /api/hypotheses - Batch create hypotheses (called by pipeline-hypothesize agent)
+  router.post('/hypotheses', async (req, res) => {
+    try {
+      const { job_id, hypotheses } = req.body;
+      if (!job_id || !Array.isArray(hypotheses) || hypotheses.length === 0) {
+        return res.status(400).json({ success: false, error: 'job_id and a non-empty hypotheses array are required' });
+      }
+
+      const run = dbManager.getRunByJobId(job_id);
+      if (!run) {
+        return res.status(404).json({ success: false, error: `No run found for job_id ${job_id}` });
+      }
+
+      const created = [];
+      for (const h of hypotheses) {
+        if (!h.hypothesis_text) continue;
+        const confidence = typeof h.confidence_score === 'number' ? Math.max(0, Math.min(1, h.confidence_score)) : null;
+        const priority = confidence !== null ? Math.floor(1000 - (confidence * 900)) : 1000;
+        const hypothesisId = await dbManager.createHypothesis({
+          run_id: run.run_id,
+          turn_number: h.turn_number || 1,
+          hypothesis_text: h.hypothesis_text,
+          hypothesis_type: h.hypothesis_type || null,
+          confidence_score: confidence,
+          status: 'proposed',
+          expected_metric: h.expected_metric || null,
+          feature_name: h.feature_name || null,
+          evaluation_reasoning: h.novelty_rationale || null,
+          priority,
+        });
+        created.push({ hypothesis_id: hypothesisId, hypothesis_text: h.hypothesis_text, hypothesis_type: h.hypothesis_type });
+      }
+
+      broadcast({ type: 'DATABASE_UPDATE', entity: 'hypotheses', jobId: job_id });
+      res.json({ success: true, created });
+    } catch (error) {
+      console.error('Error creating hypotheses:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
   // GET /api/hypotheses/:hypothesisId - Get hypothesis with evidence
   router.get('/hypotheses/:hypothesisId', async (req, res) => {
     try {

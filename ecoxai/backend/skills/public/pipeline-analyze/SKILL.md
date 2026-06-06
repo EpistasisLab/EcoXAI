@@ -37,22 +37,23 @@ dataset_id = os.environ.get('DATASET_ID', '')
 # Load cleaned data from explore phase (promoted to shared datasets volume)
 df = pd.read_csv(f'/datasets/{dataset_id}/cleaned/data.csv')
 
-# Load hypothesis — match task hypothesis text against next_hypothesis.json
+# Load hypothesis from backend API — match task hypothesis text
 hypotheses = []
 task_content = os.environ.get('TASK', '')
-hyp_path = '/workspace/output/next_hypothesis.json'
-if os.path.exists(hyp_path):
-    with open(hyp_path) as f:
-        all_hyps = json.load(f).get('hypotheses', [])
-    try:
-        marker = '**Hypothesis:**'
-        if marker in task_content:
-            hyp_text = task_content.split(marker, 1)[1].strip().split('\n')[0].strip()
-            hypotheses = [h for h in all_hyps if h.get('hypothesis_text', '').strip() == hyp_text]
-    except Exception:
-        pass
+backend_url = os.environ.get('BACKEND_URL', 'http://host.docker.internal:8081')
+
+try:
+    import requests
+    resp = requests.get(f'{backend_url}/api/hypotheses', timeout=10)
+    all_hyps = resp.json().get('hypotheses', [])
+    marker = '**Hypothesis:**'
+    if marker in task_content:
+        hyp_text = task_content.split(marker, 1)[1].strip().split('\n')[0].strip()
+        hypotheses = [h for h in all_hyps if h.get('hypothesis_text', '').strip() == hyp_text]
     if not hypotheses:
         hypotheses = all_hyps
+except Exception as e:
+    print(f"Could not load hypotheses from API: {e}")
 
 print(f"Loaded {df.shape[0]} rows × {df.shape[1]} columns, {len(hypotheses)} hypotheses")
 ```

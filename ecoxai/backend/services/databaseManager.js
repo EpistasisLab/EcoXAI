@@ -273,6 +273,15 @@ class DatabaseManager {
     return this._get('SELECT * FROM hypotheses WHERE hypothesis_id = ?', [hypothesisId]);
   }
 
+  getRunByJobId(jobId) {
+    return this._get('SELECT run_id FROM agent_runs WHERE job_id = ? LIMIT 1', [jobId]);
+  }
+
+  countHypothesesForRun(runId) {
+    const row = this._get('SELECT COUNT(*) as count FROM hypotheses WHERE run_id = ?', [runId]);
+    return row ? row.count : 0;
+  }
+
   async listHypotheses(filters = {}) {
     const { run_id, status, hypothesis_type, limit = 100, offset = 0 } = filters;
     const conditions = [];

@@ -161,10 +161,12 @@ class ContainerManager {
       const { enhancedPrompt } = await prepareWorkspace(id, job, state, volumeManager);
 
       // Build environment variables
+      const backendPort = process.env.PORT || 8081;
       const envVars = [
         `TASK=${enhancedPrompt}`,
         `JOB_ID=${id}`,
         `DATASET_ID=${datasetId || ''}`,
+        `BACKEND_URL=http://host.docker.internal:${backendPort}`,
       ];
 
       if (datasetId && state?.datasets?.[datasetId]) {
