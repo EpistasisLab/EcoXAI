@@ -1,7 +1,7 @@
 const Docker = require('dockerode');
 const path = require('path');
 const { PassThrough } = require('stream');
-const { v4: uuidv4 } = require('uuid');
+const { randomUUID: uuidv4 } = require('crypto');
 const dbManager = require('./databaseManager');
 
 const docker = new Docker();

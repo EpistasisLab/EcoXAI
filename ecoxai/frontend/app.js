@@ -170,12 +170,83 @@ function switchView(name) {
   document.querySelectorAll('.view').forEach(el => {
     el.classList.toggle('active', el.id === `view-${name}`);
   });
+  if (name === 'viz') vizInit();
   if (name === 'skills' && !state.skillsLoaded) loadSkillsList();
 }
 
 document.querySelectorAll('.nav-item').forEach(el => {
   el.addEventListener('click', () => switchView(el.dataset.view));
 });
+
+// ── Network (feature-importance viz) view ───────────────────────────────────────
+let vizWired = false;
+
+async function vizInit() {
+  const dsSel = document.getElementById('viz-dataset');
+  if (!dsSel) return;
+  let datasets = state.datasets;
+  if (!datasets || !datasets.length) {
+    try { datasets = (await (await fetch(`${apiBase()}/datasets`)).json()).datasets || []; }
+    catch { datasets = []; }
+  }
+  const prev = dsSel.value;
+  dsSel.innerHTML = datasets
+    .map(d => `<option value="${d.id}">${escHtml(d.filename)} (${d.id.slice(0, 18)}…)</option>`)
+    .join('');
+  if (prev && datasets.some(d => d.id === prev)) dsSel.value = prev;
+
+  if (!vizWired) {
+    vizWired = true;
+    dsSel.addEventListener('change', vizLoadRuns);
+    document.getElementById('viz-run').addEventListener('change', vizShowRun);
+  }
+  if (datasets.length) await vizLoadRuns();
+  else document.getElementById('viz-label').textContent = 'no datasets';
+}
+
+async function vizLoadRuns() {
+  const dsId = document.getElementById('viz-dataset').value;
+  const runSel = document.getElementById('viz-run');
+  // Jobs are no longer exposed via REST; the WebSocket FULL_STATE/JOB_UPDATE
+  // messages keep state.jobs current, so read from there.
+  const jobs = state.jobs || [];
+  const runs = jobs
+    .filter(j => j._stageId === 'analyze' && j.datasetId === dsId &&
+                 (j.status === 'completed' || (j.artifacts || []).length))
+    .sort((a, b) => (b.completedAt || b.createdAt || '').localeCompare(a.completedAt || a.createdAt || ''));
+
+  if (!runs.length) {
+    runSel.innerHTML = '<option>— no analyze runs —</option>';
+    document.getElementById('viz-frame').src = 'about:blank';
+    document.getElementById('viz-label').textContent = 'no analyze runs for this dataset';
+    return;
+  }
+  runSel.innerHTML = runs.map(j => {
+    const t = (j.completedAt || j.createdAt || '').replace('T', ' ').slice(5, 16);
+    return `<option value="${j.id}">${j.id.replace('_analyze', '')} · ${t}</option>`;
+  }).join('');
+  await vizShowRun();
+}
+
+async function vizShowRun() {
+  const dsSel = document.getElementById('viz-dataset');
+  const jobId = document.getElementById('viz-run').value;
+  if (!jobId) return;
+  const dsName = (dsSel.options[dsSel.selectedIndex]?.textContent || 'Outcome').split(' (')[0];
+
+  // Parse the best-model AUC from test_results.md (best-effort).
+  let auc = '';
+  try {
+    const md = await (await fetch(`${apiBase()}/jobs/${jobId}/artifacts/test_results.md`)).text();
+    const m = md.match(/RandomForest[^|\n]*\|\s*([0-9.]+)/) || md.match(/([01]\.\d{2,4})\s*±/);
+    if (m) auc = ` · AUC ${m[1]}`;
+  } catch {}
+  document.getElementById('viz-label').textContent = `${jobId.replace('_analyze', '')}${auc}`;
+
+  const target = `${dsName} (case/control)`;
+  document.getElementById('viz-frame').src =
+    `/viz/?job=${encodeURIComponent(jobId)}&target=${encodeURIComponent(target)}`;
+}
 
 // ── Dataset view ───────────────────────────────────────────────────────────────
 function renderDatasets() {

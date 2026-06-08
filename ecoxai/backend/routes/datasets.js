@@ -134,12 +134,15 @@ function createDatasetsRoutes(deps) {
 
       // Fire orchestrator event
       if (orchestrator) {
+        // EventEmitter.emit() is synchronous and returns a boolean, not a Promise.
+        // Async listener errors surface via the global unhandledRejection handler,
+        // matching the job_completed / hypotheses_extracted call sites.
         orchestrator.emit('dataset_uploaded', {
           datasetId,
           filename,
           recordCount: parsedData.length,
           domain: mergedSemanticMetadata?.domain || 'unknown'
-        }).catch(e => console.warn('[Orchestrator] dataset_uploaded error:', e.message));
+        });
       }
 
       // Async wiki portrait

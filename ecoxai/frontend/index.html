@@ -27,6 +27,9 @@
     <div class="nav-item" data-view="skills">
       <span class="nav-icon">🛠</span>Skills
     </div>
+    <div class="nav-item" data-view="viz">
+      <span class="nav-icon">🧬</span>Network
+    </div>
     <div class="nav-item" data-view="settings">
       <span class="nav-icon">⚙️</span>Settings
     </div>
@@ -142,6 +145,26 @@
             <p>Select a skill to edit its SKILL.md</p>
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- NETWORK (VIZ) VIEW -->
+    <div id="view-viz" class="view">
+      <div class="view-header">
+        <h2>Network</h2>
+        <span class="count" id="viz-label" style="text-transform:none;letter-spacing:0">—</span>
+      </div>
+      <div style="display:flex;gap:14px;align-items:center;padding:9px 16px;flex-wrap:wrap;border-bottom:1px solid var(--border)">
+        <label style="display:flex;gap:6px;align-items:center;font-size:11px;color:var(--text-dim)">Dataset
+          <select id="viz-dataset" class="select-input"></select>
+        </label>
+        <label style="display:flex;gap:6px;align-items:center;font-size:11px;color:var(--text-dim)">Run
+          <select id="viz-run" class="select-input"></select>
+        </label>
+      </div>
+      <div style="flex:1;min-height:0;position:relative">
+        <iframe id="viz-frame" title="Feature importance network"
+                style="width:100%;height:100%;border:0;display:block;background:#0b0e14"></iframe>
       </div>
     </div>
 
