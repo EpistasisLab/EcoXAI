@@ -288,7 +288,7 @@ class ContainerManager {
       if (tid) { clearTimeout(tid); this.timeoutHandles.delete(id); }
 
       // Collect artifacts from workspace volume
-      const artifacts = await this._getArtifacts(id);
+      const artifacts = await this._getArtifacts(id, job._stageId);
 
       // Flush execution log
       if (logBuffer) {
@@ -341,7 +341,7 @@ class ContainerManager {
     }
   }
 
-  async _getArtifacts(jobId) {
+  async _getArtifacts(jobId, stageId) {
     const artifacts = [];
     try {
       const checkContainer = await docker.createContainer({
@@ -376,7 +376,17 @@ class ContainerManager {
 
       if (result.StatusCode === 0) {
         const lines = output.trim().split('\n').filter(l => l.trim().length > 0);
-        const filePaths = lines.filter(l => l.startsWith('/workspace/output/') || (l.startsWith('/workspace/') && !l.includes('/.')));
+        const ALWAYS_EXCLUDE = new Set(['CLAUDE.md']);
+        const EXCLUDE_EXCEPT_EXPLORE = new Set(['exploration_report.md']);
+
+        const filePaths = lines
+          .filter(l => l.startsWith('/workspace/output/') || (l.startsWith('/workspace/') && !l.includes('/.')))
+          .filter(fp => {
+            const filename = fp.split('/').pop();
+            if (ALWAYS_EXCLUDE.has(filename)) return false;
+            if (EXCLUDE_EXCEPT_EXPLORE.has(filename) && stageId !== 'explore') return false;
+            return true;
+          });
         for (const filePath of filePaths) {
           const filename = filePath.split('/').pop();
           // Read artifact content
