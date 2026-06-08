@@ -713,16 +713,7 @@ function renderHypCard(h) {
 // ── Hypothesis detail panel ───────────────────────────────────────────────────
 
 function findHypTestJob(hyp) {
-  const datasetId = hyp.run_dataset_id || null;
-  if (!datasetId) return state.jobs.find(j => j.id === hyp.job_id) || null;
-  // Prefer the test stage job; fall back to the generate job
-  const testJobs = state.jobs.filter(j => j._stageId === 'test' && j.datasetId === datasetId);
-  if (testJobs.length > 0) {
-    return testJobs.sort((a, b) =>
-      (b.completedAt || b.startedAt || '') > (a.completedAt || a.startedAt || '') ? 1 : -1
-    )[0];
-  }
-  return state.jobs.find(j => j.id === hyp.job_id) || null;
+  return state.jobs.find(j => j._hypothesisId === hyp.hypothesis_id) || null;
 }
 
 function appendHypJobLog(jobId, chunk) {
@@ -795,8 +786,9 @@ function renderHypDetail() {
 
   let jobSectionHtml;
   if (job) {
-    const isTestJob = job._stageId === 'test';
-    const jobLabel = isTestJob ? 'Test Job' : 'Generate Job';
+    const jobLabel = job._stageId === 'analyze' ? 'Analysis Job'
+      : job._stageId ? job._stageId.charAt(0).toUpperCase() + job._stageId.slice(1) + ' Job'
+      : 'Job';
     const jCost = job.totalCostUsd != null ? `<span style="color:var(--green)">$${job.totalCostUsd.toFixed(4)}</span>` : '';
     const jTurns = job.numTurns != null ? `<span style="color:var(--text-dim)">${job.numTurns}t</span>` : '';
     const artCount = (job.artifacts || []).length;
@@ -824,7 +816,7 @@ function renderHypDetail() {
         </div>
       </div>`;
   } else {
-    jobSectionHtml = `<div style="padding:12px 16px;font-size:12px;color:var(--text-dim)">No test job found for this hypothesis.</div>`;
+    jobSectionHtml = `<div style="padding:12px 16px;font-size:12px;color:var(--text-dim)">No analysis job has run for this hypothesis yet.</div>`;
   }
 
   panel.innerHTML = `
