@@ -8,6 +8,46 @@
 // EcoXAI already stores one ensemble value per gene, so this is a pass-through;
 // if a gene is ever listed under several models we average them (never rescale).
 
+export function buildGraphFromNetworkData(networkData, biotypeMap, target) {
+  const tgt = target || "Outcome";
+  const nodes = [{ id: tgt, type: "disease", category: "outcome" }];
+  const links = [];
+
+  const STATUS_ORDER = ["supported", "needs_more_data", "rejected", "pending"];
+
+  for (const row of networkData.features || []) {
+    if (row.avg_importance <= 0) continue;
+    const statuses = row.hypothesis_statuses
+      ? row.hypothesis_statuses.split(",").filter(Boolean)
+      : [];
+    const dominantStatus = STATUS_ORDER.find((s) => statuses.includes(s)) || null;
+
+    nodes.push({
+      id: row.feature_name,
+      type: "factor",
+      category: biotypeMap[row.feature_name] || "unknown",
+      importance: row.avg_importance,
+      maxImportance: row.max_importance,
+      numTests: row.num_tests,
+      bestAuc: row.best_auc,
+      hypothesisStatus: dominantStatus,
+      hypothesisStatuses: statuses,
+    });
+    links.push({
+      source: row.feature_name,
+      target: tgt,
+      relation: "associated",
+      strength: row.avg_importance,
+    });
+  }
+
+  return {
+    meta: { disease: tgt, target: tgt, schema_version: 1, source: "network_endpoint" },
+    nodes,
+    links,
+  };
+}
+
 export function buildGraphFromImportance(items, biotypeMap, target) {
   if (!Array.isArray(items)) {
     items = items.features || items.feature_importances || [];

@@ -527,6 +527,31 @@ class DatabaseManager {
     );
   }
 
+  async getNetworkData(datasetId) {
+    if (!this.db) return { features: [], hypotheses: [] };
+    const [features, hypotheses] = await Promise.all([
+      this._all(
+        `SELECT
+           fir.feature_name,
+           AVG(fir.importance_score)              AS avg_importance,
+           MAX(fir.importance_score)              AS max_importance,
+           COUNT(*)                               AS num_tests,
+           MAX(fir.model_auc)                     AS best_auc,
+           GROUP_CONCAT(DISTINCT h.status)        AS hypothesis_statuses,
+           GROUP_CONCAT(DISTINCT h.hypothesis_id) AS hypothesis_ids,
+           GROUP_CONCAT(DISTINCT h.hypothesis_text) AS hypothesis_texts
+         FROM feature_importance_results fir
+         LEFT JOIN hypotheses h ON fir.hypothesis_id = h.hypothesis_id
+         WHERE fir.dataset_id = ?
+         GROUP BY fir.feature_name
+         ORDER BY avg_importance DESC`,
+        [datasetId]
+      ),
+      this.getHypothesesForDataset(datasetId),
+    ]);
+    return { features, hypotheses };
+  }
+
 }
 
 const dbManager = new DatabaseManager();

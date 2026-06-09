@@ -2,7 +2,7 @@
 
 const wikiService = require('../../services/wikiService');
 
-function attachAdvancedDatasetRoutes(router, { state, saveState, broadcast, volumeManager }) {
+function attachAdvancedDatasetRoutes(router, { state, saveState, broadcast, volumeManager, dbManager }) {
   router.delete('/datasets/:id', async (req, res) => {
     const datasetId = req.params.id;
     const dataset = state.datasets[datasetId];
@@ -16,6 +16,15 @@ function attachAdvancedDatasetRoutes(router, { state, saveState, broadcast, volu
     saveState();
     res.json({ success: true, message: 'Dataset deleted successfully', datasetId });
     console.log(`✓ Deleted dataset ${datasetId}: ${dataset.filename}`);
+  });
+
+  router.get('/datasets/:id/network', async (req, res) => {
+    try {
+      const data = await dbManager.getNetworkData(req.params.id);
+      res.json({ success: true, ...data });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
   });
 
   router.get('/datasets/:id/wiki', async (req, res) => {

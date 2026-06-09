@@ -27,7 +27,7 @@ const state = {
   datasets: [],
   jobs: [],
   hypotheses: [],
-  pipeline: { autoMode: true, stages: [] },
+  pipeline: { autoMode: false, stages: [] },
   selectedDatasetId: null,
   selectedJobId: null,
   selectedStageId: null,
@@ -93,6 +93,12 @@ function handleMessage(msg) {
       renderPipeline();
       renderHypotheses();
       renderHypDetail();
+      if (state.activeView === 'viz') {
+        const justCompleted = (msg.jobs || []).some(
+          j => j._stageId === 'analyze' && j.status === 'completed'
+        );
+        if (justCompleted) vizRefresh();
+      }
       break;
 
     case 'JOB_OUTPUT':
@@ -133,6 +139,11 @@ function handleMessage(msg) {
     case 'DATASETS_PROMOTED':
       if (msg.datasets) state.datasets = msg.datasets;
       renderDatasets();
+      if (state.selectedDatasetId) {
+        const ds = state.datasets.find(d => d.id === state.selectedDatasetId);
+        const input = document.getElementById('ds-context-input');
+        if (input && ds) input.value = ds.userContext || '';
+      }
       break;
 
     case 'DATABASE_UPDATE':
@@ -205,47 +216,51 @@ async function vizInit() {
 }
 
 async function vizLoadRuns() {
-  const dsId = document.getElementById('viz-dataset').value;
-  const runSel = document.getElementById('viz-run');
-  // Jobs are no longer exposed via REST; the WebSocket FULL_STATE/JOB_UPDATE
-  // messages keep state.jobs current, so read from there.
-  const jobs = state.jobs || [];
-  const runs = jobs
-    .filter(j => j._stageId === 'analyze' && j.datasetId === dsId &&
-                 (j.status === 'completed' || (j.artifacts || []).length))
-    .sort((a, b) => (b.completedAt || b.createdAt || '').localeCompare(a.completedAt || a.createdAt || ''));
-
-  if (!runs.length) {
-    runSel.innerHTML = '<option>— no analyze runs —</option>';
-    document.getElementById('viz-frame').src = 'about:blank';
-    document.getElementById('viz-label').textContent = 'no analyze runs for this dataset';
-    return;
-  }
-  runSel.innerHTML = runs.map(j => {
-    const t = (j.completedAt || j.createdAt || '').replace('T', ' ').slice(5, 16);
-    return `<option value="${j.id}">${j.id.replace('_analyze', '')} · ${t}</option>`;
-  }).join('');
   await vizShowRun();
 }
 
 async function vizShowRun() {
   const dsSel = document.getElementById('viz-dataset');
-  const jobId = document.getElementById('viz-run').value;
-  if (!jobId) return;
+  const dsId = dsSel.value;
+  if (!dsId) return;
   const dsName = (dsSel.options[dsSel.selectedIndex]?.textContent || 'Outcome').split(' (')[0];
-
-  // Parse the best-model AUC from test_results.md (best-effort).
-  let auc = '';
-  try {
-    const md = await (await fetch(`${apiBase()}/jobs/${jobId}/artifacts/test_results.md`)).text();
-    const m = md.match(/RandomForest[^|\n]*\|\s*([0-9.]+)/) || md.match(/([01]\.\d{2,4})\s*±/);
-    if (m) auc = ` · AUC ${m[1]}`;
-  } catch {}
-  document.getElementById('viz-label').textContent = `${jobId.replace('_analyze', '')}${auc}`;
-
   const target = `${dsName} (case/control)`;
-  document.getElementById('viz-frame').src =
-    `/viz/?job=${encodeURIComponent(jobId)}&target=${encodeURIComponent(target)}`;
+  const frame = document.getElementById('viz-frame');
+
+  frame.onload = async () => {
+    frame.onload = null;
+    try {
+      const resp = await fetch(`${apiBase()}/datasets/${dsId}/network`);
+      const data = await resp.json();
+      if (data.features && data.features.length) {
+        frame.contentWindow.postMessage({ type: 'LOAD_NETWORK_DATA', data, target }, '*');
+        document.getElementById('viz-label').textContent = dsName;
+      } else {
+        document.getElementById('viz-label').textContent = 'no analyze results yet';
+      }
+    } catch (e) {
+      document.getElementById('viz-label').textContent = 'network load failed';
+    }
+  };
+  frame.src = '/viz/';
+}
+
+async function vizRefresh() {
+  const dsSel = document.getElementById('viz-dataset');
+  const dsId = dsSel?.value;
+  const frame = document.getElementById('viz-frame');
+  if (!dsId || !frame?.contentWindow) return;
+  const dsName = (dsSel.options[dsSel.selectedIndex]?.textContent || 'Outcome').split(' (')[0];
+  try {
+    const resp = await fetch(`${apiBase()}/datasets/${dsId}/network`);
+    const data = await resp.json();
+    if (data.features && data.features.length) {
+      frame.contentWindow.postMessage(
+        { type: 'LOAD_NETWORK_DATA', data, target: `${dsName} (case/control)` }, '*'
+      );
+      document.getElementById('viz-label').textContent = `${dsName} (updated)`;
+    }
+  } catch {}
 }
 
 // ── Dataset view ───────────────────────────────────────────────────────────────
@@ -259,21 +274,28 @@ function renderDatasets() {
 
   if (state.datasets.length === 0) {
     list.innerHTML = '<div class="empty-state"><div class="icon">📭</div><p>No datasets yet.<br>Upload a CSV/JSON/Feather file.</p></div>';
+    const ctxSection = document.getElementById('ds-context-section');
+    if (ctxSection) ctxSection.style.display = 'none';
     return;
+  }
+  if (!state.selectedDatasetId) {
+    const ctxSection = document.getElementById('ds-context-section');
+    if (ctxSection) ctxSection.style.display = 'none';
   }
 
   list.innerHTML = state.datasets.map(ds => {
+    const pending = ds.status === 'pending';
     const conf = ds.normalization?.confidence ?? null;
     const confStr = conf !== null ? (conf * 100).toFixed(0) + '%' : '—';
     const confClass = conf !== null && conf < 0.7 ? 'ds-conf low' : 'ds-conf';
     const selected = ds.id === state.selectedDatasetId ? ' selected' : '';
     return `
       <div class="dataset-card${selected}" onclick="app.selectDataset('${ds.id}')">
-        <div class="ds-name">${escHtml(ds.filename || ds.id)} <span class="ds-badge">${escHtml(ds.type || 'csv')}</span></div>
+        <div class="ds-name">${escHtml(ds.filename || ds.id)} <span class="ds-badge">${escHtml(ds.type || 'csv')}</span>${pending ? ' <span class="auto-badge off" style="font-size:9px;padding:1px 5px">PENDING</span>' : ''}</div>
         <div class="ds-meta">
           <span>${(ds.recordCount || 0).toLocaleString()} rows</span>
           <span>${ds.columnCount || 0} cols</span>
-          <span class="${confClass}">conf ${confStr}</span>
+          ${pending ? '<span style="color:var(--text-dim)">not yet normalized</span>' : `<span class="${confClass}">conf ${confStr}</span>`}
           ${ds.normalization?.domain ? `<span>${escHtml(ds.normalization.domain)}</span>` : ''}
           <span>${formatDate(ds.uploadedAt)}</span>
         </div>
@@ -393,9 +415,19 @@ function updateStageFromJob(jobId, status) {
 
 function updateAutoModeBadge(autoMode) {
   const badge = document.getElementById('auto-badge');
-  if (!badge) return;
-  badge.textContent = autoMode ? 'AUTO' : 'PAUSED';
-  badge.className = 'auto-badge ' + (autoMode ? 'on' : 'off');
+  if (badge) {
+    badge.textContent = autoMode ? 'AUTO' : 'PAUSED';
+    badge.className = 'auto-badge ' + (autoMode ? 'on' : 'off');
+  }
+  const dsBadge = document.getElementById('ds-auto-badge');
+  const dsMsg   = document.getElementById('ds-pipeline-msg');
+  const dsBtn   = document.getElementById('ds-pipeline-btn');
+  if (dsBadge) {
+    dsBadge.textContent = autoMode ? 'AUTO' : 'PAUSED';
+    dsBadge.className = 'auto-badge ' + (autoMode ? 'on' : 'off');
+  }
+  if (dsMsg) dsMsg.textContent = autoMode ? 'Pipeline is running — stages will advance automatically.' : 'Pipeline is paused — upload a dataset and start when ready.';
+  if (dsBtn) dsBtn.textContent = autoMode ? 'Pause Pipeline' : 'Start Pipeline';
 }
 
 function appendJobLog(jobId, chunk) {
@@ -949,16 +981,43 @@ window.app = {
     state.selectedDatasetId = datasetId;
     renderDatasets();
     loadWiki(datasetId);
+    const section = document.getElementById('ds-context-section');
+    const input   = document.getElementById('ds-context-input');
+    if (section && input) {
+      const ds = state.datasets.find(d => d.id === datasetId);
+      input.value = ds?.userContext || '';
+      section.style.display = 'block';
+    }
   },
 
   async pausePipeline() {
     await fetch(`${apiBase()}/pipeline/pause`, { method: 'POST' });
+    state.pipeline.autoMode = false;
     updateAutoModeBadge(false);
   },
 
   async resumePipeline() {
     await fetch(`${apiBase()}/pipeline/resume`, { method: 'POST' });
+    state.pipeline.autoMode = true;
     updateAutoModeBadge(true);
+  },
+
+  async togglePipeline() {
+    if (state.pipeline.autoMode) {
+      await this.pausePipeline();
+    } else {
+      await this.resumePipeline();
+    }
+  },
+
+  async saveDatasetContext() {
+    if (!state.selectedDatasetId) return;
+    const text = (document.getElementById('ds-context-input')?.value || '').trim();
+    await fetch(`${apiBase()}/datasets/${state.selectedDatasetId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userContext: text }),
+    });
   },
 
   async triggerStage(stageId, datasetId) {

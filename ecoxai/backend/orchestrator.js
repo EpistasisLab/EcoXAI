@@ -8,6 +8,8 @@
  */
 
 const EventEmitter = require('events');
+const fs = require('fs');
+const path = require('path');
 const { evaluateHypothesisFromReport } = require('./services/jobPostCompletion');
 
 // ═══════════════════════════════════════════════════════
@@ -73,7 +75,7 @@ class Orchestrator extends EventEmitter {
    */
   init(deps) {
     this.deps = deps;
-    this.autoMode = deps.state.pipelineAutoMode !== undefined ? deps.state.pipelineAutoMode : true;
+    this.autoMode = deps.state.pipelineAutoMode !== undefined ? deps.state.pipelineAutoMode : false;
     // Apply any persisted stage overrides (skill, prompt, name, auto)
     const overrides = deps.state.pipelineStageOverrides || {};
     for (const [stageId, updates] of Object.entries(overrides)) {
@@ -249,6 +251,10 @@ class Orchestrator extends EventEmitter {
       if (context.previousHypotheses) {
         prompt += `\n\nPreviously tested hypotheses — do NOT regenerate these:\n${context.previousHypotheses}`;
       }
+      const dataset = state.datasets[datasetId];
+      if (dataset?.userContext) {
+        prompt += `\n\nUser-provided context about this dataset:\n${dataset.userContext}`;
+      }
 
       const jobTitle = hypothesis?.feature_name
         ? `[Pipeline] ${stage.name}: ${hypothesis.feature_name}`
@@ -332,6 +338,94 @@ class Orchestrator extends EventEmitter {
     setImmediate(() => this._advanceStuckDatasets().catch(err => console.error('[Orchestrator] Resume advance error:', err.message)));
   }
 
+  async _normalizeAndStart(datasetId) {
+    const { state, saveState, broadcast, volumeManager, normalizationService, dbManager } = this.deps;
+    const dataset = state.datasets[datasetId];
+    if (!dataset || dataset.status !== 'pending') return;
+
+    const pendingFilePath = dataset._pendingFilePath;
+    if (!pendingFilePath || !fs.existsSync(pendingFilePath)) {
+      console.error(`[Orchestrator] Pending file missing for ${datasetId}`);
+      return;
+    }
+
+    this._broadcastStageUpdate('normalize', 'Normalize Dataset', 'running', null, datasetId);
+    const startedAt = new Date().toISOString();
+
+    try {
+      const buffer = fs.readFileSync(pendingFilePath);
+      const normResult = await normalizationService.normalizeDataset(datasetId, dataset.filename, buffer);
+      if (!normResult.success) {
+        console.error(`[Orchestrator] Normalization failed for ${datasetId}:`, normResult.error);
+        this._broadcastStageUpdate('normalize', 'Normalize Dataset', 'failed', null, datasetId);
+        return;
+      }
+
+      const copyResult = await volumeManager.copyNormalizedDatasetToVolume(datasetId, normResult.normalizedPath);
+      if (!copyResult.success) {
+        console.error(`[Orchestrator] Volume copy failed for ${datasetId}:`, copyResult.error);
+        this._broadcastStageUpdate('normalize', 'Normalize Dataset', 'failed', null, datasetId);
+        return;
+      }
+
+      state.datasets[datasetId] = {
+        ...dataset,
+        status: 'active',
+        normalization: {
+          version: normResult.version,
+          confidence: normResult.overallConfidence,
+          documentType: normResult.documentType,
+          artifacts: normResult.artifacts,
+          excluded: normResult.excluded,
+          semanticMetadata: normResult.semanticMetadata,
+          normalizedPath: normResult.normalizedPath,
+        },
+      };
+      delete state.datasets[datasetId]._pendingFilePath;
+      saveState();
+      broadcast({ type: 'DATASETS_PROMOTED', datasets: Object.values(state.datasets) });
+      this._broadcastStageUpdate('normalize', 'Normalize Dataset', 'completed', null, datasetId);
+
+      // Clean up pending file
+      try { fs.unlinkSync(pendingFilePath); } catch (_) {}
+      try { fs.rmdirSync(path.dirname(pendingFilePath)); } catch (_) {}
+
+      if (dbManager) {
+        try {
+          await dbManager.trackNormalization({
+            dataset_id: datasetId,
+            version: normResult.version,
+            started_at: startedAt,
+            completed_at: new Date().toISOString(),
+            duration_ms: normResult.durationMs,
+            success: 1,
+            overall_confidence: normResult.overallConfidence,
+            document_type: normResult.documentType,
+            num_artifacts: normResult.artifacts.length,
+            num_exclusions: normResult.excluded.length,
+            metadata_json: JSON.stringify(normResult.semanticMetadata),
+          });
+        } catch (dbErr) {
+          console.warn('[Orchestrator] DB normalization tracking failed:', dbErr.message);
+        }
+      }
+
+      // Async wiki portrait (non-blocking)
+      const wikiService = require('./services/wikiService');
+      volumeManager.readDatasetContext(datasetId)
+        .then(ctx => wikiService.compilePortrait(datasetId, state.datasets[datasetId], ctx))
+        .then(() => broadcast({ type: 'WIKI_UPDATE', datasetId }))
+        .catch(err => console.warn(`[Wiki] Portrait failed:`, err.message));
+
+      const exploreStage = PIPELINE_STAGES.find(s => s.id === 'explore');
+      if (exploreStage) await this._runStage(exploreStage, { datasetId });
+
+    } catch (err) {
+      console.error(`[Orchestrator] _normalizeAndStart failed for ${datasetId}:`, err.message);
+      this._broadcastStageUpdate('normalize', 'Normalize Dataset', 'failed', null, datasetId);
+    }
+  }
+
   async _advanceStuckDatasets() {
     if (!this.deps) return;
     const jobs = this.deps.state.jobs || [];
@@ -355,6 +449,13 @@ class Orchestrator extends EventEmitter {
         console.log(`[Orchestrator] Resume: advancing ${datasetId} from ${job._stageId} → ${nextStage.id}`);
         await this._runStage(nextStage, { datasetId });
       }
+    }
+
+    // Normalize and start datasets that were uploaded while the pipeline was paused
+    for (const [datasetId, dataset] of Object.entries(this.deps.state.datasets || {})) {
+      if (dataset.status !== 'pending') continue;
+      console.log(`[Orchestrator] Resume: normalizing dataset ${datasetId} (uploaded while paused)`);
+      await this._normalizeAndStart(datasetId);
     }
 
     // Resume any paused hypothesis analysis queues (in-memory queue survived the pause)

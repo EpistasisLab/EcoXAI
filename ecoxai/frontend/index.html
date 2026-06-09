@@ -49,13 +49,25 @@
         <label class="upload-area" for="file-upload">
           <div style="font-size:24px;margin-bottom:8px">📂</div>
           <div style="font-weight:600;margin-bottom:4px">Drop a file or click to upload</div>
-          <div style="font-size:11px">CSV, JSON, or Feather — auto-normalizes and runs pipeline</div>
+          <div style="font-size:11px">CSV, JSON, or Feather — add context, then start the pipeline</div>
           <input id="file-upload" type="file" accept=".csv,.json,.feather">
         </label>
         <div style="margin-top:12px;font-size:11px;color:var(--text-dim)">
           Or drop files directly into <code>lean/backend/datasets/</code>
         </div>
+        <div id="ds-pipeline-banner" style="margin-top:16px;padding:12px 14px;border-radius:6px;background:var(--surface2);display:flex;align-items:center;gap:12px;justify-content:space-between">
+          <div style="display:flex;align-items:center;gap:10px">
+            <span class="auto-badge off" id="ds-auto-badge">PAUSED</span>
+            <span id="ds-pipeline-msg" style="font-size:12px;color:var(--text-dim)">Pipeline is paused — upload a dataset and start when ready.</span>
+          </div>
+          <button class="btn primary" id="ds-pipeline-btn" onclick="app.togglePipeline()">Start Pipeline</button>
+        </div>
         <div class="dataset-list" id="dataset-list" style="margin-top:12px"></div>
+        <div id="ds-context-section" style="display:none;margin-top:12px">
+          <div style="font-size:11px;color:var(--text-dim);margin-bottom:4px">Dataset context <span style="font-weight:400">(optional — fed into the pipeline)</span></div>
+          <textarea id="ds-context-input" class="settings-input" style="width:100%;min-height:72px;resize:vertical;box-sizing:border-box" placeholder="Describe what this dataset is, the research question, known caveats, or any domain context the pipeline should know..."></textarea>
+          <button class="btn" style="margin-top:6px" onclick="app.saveDatasetContext()">Save Context</button>
+        </div>
         <div id="wiki-area"></div>
       </div>
     </div>
@@ -158,7 +170,7 @@
         <label style="display:flex;gap:6px;align-items:center;font-size:11px;color:var(--text-dim)">Dataset
           <select id="viz-dataset" class="select-input"></select>
         </label>
-        <label style="display:flex;gap:6px;align-items:center;font-size:11px;color:var(--text-dim)">Run
+        <label style="display:none">
           <select id="viz-run" class="select-input"></select>
         </label>
       </div>

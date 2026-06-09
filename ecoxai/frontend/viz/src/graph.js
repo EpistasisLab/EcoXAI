@@ -6,7 +6,7 @@
 // classic scripts before this module — no CDN, no importmap, ONE bundled three.
 // Always-on 3D labels are plain HTML positioned via Graph3D.graph2ScreenCoords(),
 // so no second three / three-spritetext is needed.
-import { buildGraphFromImportance } from "./ecoxai_adapter.js";
+import { buildGraphFromImportance, buildGraphFromNetworkData } from "./ecoxai_adapter.js";
 
 const CATEGORY_COLOR = {
   outcome: "#e15759",
@@ -314,13 +314,25 @@ function render2D(graph) {
     });
 }
 
+const HYPOTHESIS_STATUS_COLOR = {
+  supported: "#59a14f",
+  needs_more_data: "#f28e2b",
+  rejected: "#e15759",
+  pending: "#bab0ac",
+};
+
 function nodeTip(d) {
   if (d.importance != null) {
-    // EcoXAI gene node. Label is the source model (e.g. "ensemble_mean"); the
-    // value is that model's importance (normalised Σ=1, averaged across models).
     const m = rawGraph.meta?.models;
     const label = Array.isArray(m) && m.length ? m.join(", ") : "importance";
-    return `<b>${d.id}</b><br>biotype: ${d.category}<br>${label}: ${d.importance}`;
+    let html = `<b>${d.id}</b><br>biotype: ${d.category}<br>${label}: ${d.importance}`;
+    if (d.hypothesisStatus) {
+      const c = HYPOTHESIS_STATUS_COLOR[d.hypothesisStatus] || "#fff";
+      html += `<br><span style="color:${c}">● ${d.hypothesisStatus.replace(/_/g, " ")}</span>`;
+    }
+    if (d.bestAuc != null) html += `<br>best AUC: ${d.bestAuc.toFixed(3)}`;
+    if (d.numTests > 1) html += `<br>tested in ${d.numTests} runs`;
+    return html;
   }
   const ms = d.models ? `<br><i>${modelsLine(d)}</i>` : "";
   return `<b>${d.id}</b><br>type: ${d.type} · category: ${d.category}<br>models: ${d.mentions ?? 0}${ms}`;
@@ -339,8 +351,16 @@ function render3D(graph) {
       .nodeVal((n) => (n.type === "disease" ? 16 : n.importance != null ? 2 + (n.importance / maxImportance) * 14 : 2 + (n.mentions ?? 1) * 2.2))
       .nodeOpacity(0.95)
       .nodeResolution(18)
-      .nodeLabel((n) => `<div style="font:12px Inter,sans-serif;color:#e8edf3">
-          <b>${n.id}</b><br>${n.category}${n.models ? "<br>" + modelsLine(n) : ""}</div>`)
+      .nodeLabel((n) => {
+        let s = `<div style="font:12px Inter,sans-serif;color:#e8edf3"><b>${n.id}</b><br>${n.category}`;
+        if (n.models) s += "<br>" + modelsLine(n);
+        if (n.hypothesisStatus) {
+          const c = HYPOTHESIS_STATUS_COLOR[n.hypothesisStatus] || "#fff";
+          s += `<br><span style="color:${c}">● ${n.hypothesisStatus.replace(/_/g, " ")}</span>`;
+        }
+        if (n.bestAuc != null) s += `<br>best AUC: ${n.bestAuc.toFixed(3)}`;
+        return s + "</div>";
+      })
       .linkColor((l) => RELATION_COLOR[l.relation] ?? "#7a869a")
       .linkWidth((l) => 0.4 + 2.6 * ((l.strength ?? 0) / maxStrength))
       .linkOpacity(0.4)
@@ -468,6 +488,19 @@ document.querySelectorAll("#viewToggle button").forEach((btn) =>
     renderCurrent();
   })
 );
+
+// postMessage bridge: parent app sends enriched dataset-level network data.
+window.addEventListener("message", async (e) => {
+  if (!e.data || e.data.type !== "LOAD_NETWORK_DATA") return;
+  const { data, target } = e.data;
+  if (!data?.features?.length) { showErr("no network data"); return; }
+  try {
+    const biotypeMap = await fetch("data/biotype_map.json").then((r) => r.json());
+    renderGraphData(buildGraphFromNetworkData(data, biotypeMap, target));
+  } catch (err) {
+    showErr("network render failed: " + err.message);
+  }
+});
 
 // This copy is embedded in EcoXAI and is always driven by `?job=<id>`.
 // reload re-loads the same job; without ?job we just show a hint (the

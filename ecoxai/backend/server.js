@@ -200,6 +200,7 @@ orchestrator.init({
   startJobExecution: routeDeps.startJobExecution,
   dbManager,
   volumeManager,
+  normalizationService,
 });
 
 // ── Mount routes ──────────────────────────────────────────────────────────────
@@ -294,8 +295,6 @@ function watchDatasetFolder() {
 
       try {
         const buffer = fs.readFileSync(filePath);
-
-        // Simulate upload by directly processing
         const datasetId = `dataset_${Date.now()}`;
         let parsedData;
         let fileType;
@@ -311,41 +310,20 @@ function watchDatasetFolder() {
           fileType = 'feather';
         }
 
-        console.log(`[Watcher] Normalizing ${datasetId} (${filename})...`);
-        const normResult = await normalizationService.normalizeDataset(datasetId, filename, buffer);
-        if (!normResult.success) { console.error(`[Watcher] Normalization failed:`, normResult.error); return; }
-
-        const copyResult = await volumeManager.copyNormalizedDatasetToVolume(datasetId, normResult.normalizedPath);
-        if (!copyResult.success) { console.error(`[Watcher] Volume copy failed:`, copyResult.error); return; }
-
+        // Store as pending — normalization runs when the user starts the pipeline
         const columnCount = parsedData.length > 0 ? Object.keys(parsedData[0]).length : 0;
-        const datasetMetadata = {
+        state.datasets[datasetId] = {
           id: datasetId, filename, sanitizedFilename: datasetId,
           size: buffer.length,
           uploadedAt: new Date().toISOString(), type: fileType,
           recordCount: parsedData.length, columnCount,
-          normalization: {
-            version: normResult.version,
-            confidence: normResult.overallConfidence,
-            documentType: normResult.documentType,
-            artifacts: normResult.artifacts,
-            excluded: normResult.excluded,
-            semanticMetadata: normResult.semanticMetadata,
-            normalizedPath: normResult.normalizedPath
-          }
+          status: 'pending',
+          _pendingFilePath: filePath,
         };
-
-        state.datasets[datasetId] = datasetMetadata;
         saveState();
         broadcast({ type: 'DATASETS_PROMOTED', datasets: Object.values(state.datasets) });
 
-        console.log(`[Watcher] ✓ ${filename} → ${datasetId} (${parsedData.length} records)`);
-
-        // Fire pipeline
-        await orchestrator.emit('dataset_uploaded', {
-          datasetId, filename, recordCount: parsedData.length,
-          domain: normResult.semanticMetadata?.domain || 'unknown'
-        });
+        console.log(`[Watcher] ✓ ${filename} → ${datasetId} (${parsedData.length} records) — awaiting pipeline start`);
 
       } catch (err) {
         console.error(`[Watcher] Failed to process ${filename}:`, err.message);
