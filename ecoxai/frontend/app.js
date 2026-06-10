@@ -94,12 +94,6 @@ function handleMessage(msg) {
       renderPipeline();
       renderHypotheses();
       renderHypDetail();
-      if (state.activeView === 'viz') {
-        const justCompleted = (msg.jobs || []).some(
-          j => j._stageId === 'analyze' && j.status === 'completed'
-        );
-        if (justCompleted) vizRefresh();
-      }
       break;
 
     case 'JOB_OUTPUT':
@@ -182,87 +176,12 @@ function switchView(name) {
   document.querySelectorAll('.view').forEach(el => {
     el.classList.toggle('active', el.id === `view-${name}`);
   });
-  if (name === 'viz') vizInit();
   if (name === 'skills' && !state.skillsLoaded) loadSkillsList();
 }
 
 document.querySelectorAll('.nav-item').forEach(el => {
   el.addEventListener('click', () => switchView(el.dataset.view));
 });
-
-// ── Network (feature-importance viz) view ───────────────────────────────────────
-let vizWired = false;
-
-async function vizInit() {
-  const dsSel = document.getElementById('viz-dataset');
-  if (!dsSel) return;
-  let datasets = state.datasets;
-  if (!datasets || !datasets.length) {
-    try { datasets = (await (await fetch(`${apiBase()}/datasets`)).json()).datasets || []; }
-    catch { datasets = []; }
-  }
-  const prev = dsSel.value;
-  dsSel.innerHTML = datasets
-    .map(d => `<option value="${d.id}">${escHtml(d.filename)} (${d.id.slice(0, 18)}…)</option>`)
-    .join('');
-  if (prev && datasets.some(d => d.id === prev)) dsSel.value = prev;
-
-  if (!vizWired) {
-    vizWired = true;
-    dsSel.addEventListener('change', vizLoadRuns);
-    document.getElementById('viz-run').addEventListener('change', vizShowRun);
-  }
-  if (datasets.length) await vizLoadRuns();
-  else document.getElementById('viz-label').textContent = 'no datasets';
-}
-
-async function vizLoadRuns() {
-  await vizShowRun();
-}
-
-async function vizShowRun() {
-  const dsSel = document.getElementById('viz-dataset');
-  const dsId = dsSel.value;
-  if (!dsId) return;
-  const dsName = (dsSel.options[dsSel.selectedIndex]?.textContent || 'Outcome').split(' (')[0];
-  const target = `${dsName} (case/control)`;
-  const frame = document.getElementById('viz-frame');
-
-  frame.onload = async () => {
-    frame.onload = null;
-    try {
-      const resp = await fetch(`${apiBase()}/datasets/${dsId}/network`);
-      const data = await resp.json();
-      if (data.features && data.features.length) {
-        frame.contentWindow.postMessage({ type: 'LOAD_NETWORK_DATA', data, target }, '*');
-        document.getElementById('viz-label').textContent = dsName;
-      } else {
-        document.getElementById('viz-label').textContent = 'no analyze results yet';
-      }
-    } catch (e) {
-      document.getElementById('viz-label').textContent = 'network load failed';
-    }
-  };
-  frame.src = '/viz/';
-}
-
-async function vizRefresh() {
-  const dsSel = document.getElementById('viz-dataset');
-  const dsId = dsSel?.value;
-  const frame = document.getElementById('viz-frame');
-  if (!dsId || !frame?.contentWindow) return;
-  const dsName = (dsSel.options[dsSel.selectedIndex]?.textContent || 'Outcome').split(' (')[0];
-  try {
-    const resp = await fetch(`${apiBase()}/datasets/${dsId}/network`);
-    const data = await resp.json();
-    if (data.features && data.features.length) {
-      frame.contentWindow.postMessage(
-        { type: 'LOAD_NETWORK_DATA', data, target: `${dsName} (case/control)` }, '*'
-      );
-      document.getElementById('viz-label').textContent = `${dsName} (updated)`;
-    }
-  } catch {}
-}
 
 // ── Dataset view ───────────────────────────────────────────────────────────────
 function renderDatasets() {
@@ -870,9 +789,9 @@ function renderHypDetail() {
     const logEl = document.getElementById('hyp-job-log');
     if (logEl) logEl.scrollTop = logEl.scrollHeight;
   }
-  if (tab === 'assets' && !state.hypDetailAsset && job) {
+  if (tab === 'assets' && job) {
     const names = (job.artifacts || []).map(a => typeof a === 'string' ? a : (a.name || a.path || ''));
-    const pick = names.find(n => n === 'report.md') || names[0];
+    const pick = state.hypDetailAsset || names.find(n => n === 'report.md') || names[0];
     if (pick) app.loadHypAsset(job.id, pick);
   }
 }

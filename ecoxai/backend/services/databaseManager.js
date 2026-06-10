@@ -555,54 +555,6 @@ class DatabaseManager {
     return result.lastID;
   }
 
-  async getAggregatedFeatureImportance(datasetId) {
-    if (!this.db) return [];
-    return this._all(
-      `SELECT feature_name,
-         AVG(importance_score) as avg_importance,
-         MAX(importance_score) as max_importance,
-         MIN(importance_score) as min_importance,
-         COUNT(*) as num_tests,
-         MAX(created_at) as last_tested
-       FROM feature_importance_results WHERE dataset_id = ?
-       GROUP BY feature_name ORDER BY avg_importance DESC`,
-      [datasetId]
-    );
-  }
-
-  async getFeatureImportanceResults(datasetId) {
-    if (!this.db) return [];
-    return this._all(
-      'SELECT * FROM feature_importance_results WHERE dataset_id = ? ORDER BY created_at DESC',
-      [datasetId]
-    );
-  }
-
-  async getNetworkData(datasetId) {
-    if (!this.db) return { features: [], hypotheses: [] };
-    const [features, hypotheses] = await Promise.all([
-      this._all(
-        `SELECT
-           fir.feature_name,
-           AVG(fir.importance_score)              AS avg_importance,
-           MAX(fir.importance_score)              AS max_importance,
-           COUNT(*)                               AS num_tests,
-           MAX(fir.model_auc)                     AS best_auc,
-           GROUP_CONCAT(DISTINCT h.status)        AS hypothesis_statuses,
-           GROUP_CONCAT(DISTINCT h.hypothesis_id) AS hypothesis_ids,
-           GROUP_CONCAT(DISTINCT h.hypothesis_text) AS hypothesis_texts
-         FROM feature_importance_results fir
-         LEFT JOIN hypotheses h ON fir.hypothesis_id = h.hypothesis_id
-         WHERE fir.dataset_id = ?
-         GROUP BY fir.feature_name
-         ORDER BY avg_importance DESC`,
-        [datasetId]
-      ),
-      this.getHypothesesForDataset(datasetId),
-    ]);
-    return { features, hypotheses };
-  }
-
 }
 
 const dbManager = new DatabaseManager();
