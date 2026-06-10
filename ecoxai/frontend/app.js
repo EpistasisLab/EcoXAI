@@ -40,10 +40,10 @@ const state = {
   hypSearch: '',
   hypView: 'list',
   selectedHypId: null,
-  hypDetailTab: 'logs',
+  hypDetailTab: 'assets',
   hypDetailAsset: null,
   selectedAssetFile: null,
-  selectedDetailTab: 'logs',
+  selectedDetailTab: 'assets',
   selectedSkillId: null,
   skillDraft: null,
   skillsLoaded: false,
@@ -462,21 +462,26 @@ function renderJobDetail(jobId) {
       </div>
     </div>
     <div class="detail-tabs">
-      <div class="detail-tab ${state.selectedDetailTab === 'logs' ? 'active' : ''}" onclick="app.selectDetailTab('logs')">Logs</div>
       <div class="detail-tab ${state.selectedDetailTab === 'assets' ? 'active' : ''}" onclick="app.selectDetailTab('assets')">Assets <span style="color:var(--text-dim);font-size:10px">(${artCount})</span></div>
+      <div class="detail-tab ${state.selectedDetailTab === 'logs' ? 'active' : ''}" onclick="app.selectDetailTab('logs')">Logs</div>
     </div>
     <div class="detail-body">
-      <div class="detail-pane ${state.selectedDetailTab === 'logs' ? 'active' : ''}" id="pane-logs">
-        <pre class="job-log">${logContent}</pre>
-      </div>
       <div class="detail-pane ${state.selectedDetailTab === 'assets' ? 'active' : ''}" id="pane-assets">
         ${buildAssetsPane(job)}
+      </div>
+      <div class="detail-pane ${state.selectedDetailTab === 'logs' ? 'active' : ''}" id="pane-logs">
+        <pre class="job-log">${logContent}</pre>
       </div>
     </div>`;
 
   if (settings.autoScroll && state.selectedDetailTab === 'logs') {
     const logEl = detail.querySelector('.job-log');
     if (logEl) logEl.scrollTop = logEl.scrollHeight;
+  }
+  if (state.selectedDetailTab === 'assets' && !state.selectedAssetFile) {
+    const names = (job.artifacts || []).map(a => typeof a === 'string' ? a : (a.name || a.path || ''));
+    const pick = names.find(n => n === 'report.md') || names[0];
+    if (pick) app.loadAsset(job.id, pick);
   }
 }
 
@@ -728,9 +733,7 @@ function renderHypCard(h) {
     ? `<span class="hyp-running"><span class="spinner" style="width:9px;height:9px;border-width:1.5px"></span> testing</span>`
     : '';
 
-  const hint = !selected
-    ? `<span class="hyp-hint">▸ log &amp; artifacts</span>`
-    : '';
+  const hint = '';
 
   return `
     <div class="hyp-card${selected}" onclick="app.selectHyp(${id})">
@@ -836,15 +839,15 @@ function renderHypDetail() {
           ${jCost}${jTurns}
         </div>
         <div class="detail-tabs">
-          <div class="detail-tab ${tab === 'logs' ? 'active' : ''}" onclick="app.selectHypTab('logs')">Logs</div>
           <div class="detail-tab ${tab === 'assets' ? 'active' : ''}" onclick="app.selectHypTab('assets')">Assets <span style="color:var(--text-dim);font-size:10px">(${artCount})</span></div>
+          <div class="detail-tab ${tab === 'logs' ? 'active' : ''}" onclick="app.selectHypTab('logs')">Logs</div>
         </div>
         <div class="detail-body">
-          <div class="detail-pane ${tab === 'logs' ? 'active' : ''}" id="hyp-pane-logs">
-            <pre class="job-log" id="hyp-job-log">${logContent}</pre>
-          </div>
           <div class="detail-pane ${tab === 'assets' ? 'active' : ''}" id="hyp-pane-assets">
             ${buildHypAssetsPane(job)}
+          </div>
+          <div class="detail-pane ${tab === 'logs' ? 'active' : ''}" id="hyp-pane-logs">
+            <pre class="job-log" id="hyp-job-log">${logContent}</pre>
           </div>
         </div>
       </div>`;
@@ -866,6 +869,11 @@ function renderHypDetail() {
   if (settings.autoScroll && tab === 'logs') {
     const logEl = document.getElementById('hyp-job-log');
     if (logEl) logEl.scrollTop = logEl.scrollHeight;
+  }
+  if (tab === 'assets' && !state.hypDetailAsset && job) {
+    const names = (job.artifacts || []).map(a => typeof a === 'string' ? a : (a.name || a.path || ''));
+    const pick = names.find(n => n === 'report.md') || names[0];
+    if (pick) app.loadHypAsset(job.id, pick);
   }
 }
 
