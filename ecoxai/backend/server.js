@@ -13,6 +13,7 @@ const containerManager = require('./services/containerManager');
 const volumeManager = require('./services/volumeManager');
 const dbManager = require('./services/databaseManager');
 const normalizationService = require('./services/normalizationService');
+const embeddingService = require('./services/embeddingService');
 const orchestrator = require('./orchestrator');
 const jobExecution = require('./services/jobExecution');
 
@@ -357,6 +358,9 @@ async function start() {
   } catch (err) {
     console.warn('[DB] Not available — observability disabled:', err.message);
   }
+
+  // Pre-load embedding model in the background (avoids cold-start on first RAG request)
+  embeddingService.warmup();
 
   // Reconcile stale jobs
   await reconcileStaleJobs();

@@ -146,6 +146,29 @@ When `EXECUTION_ENV=hpc`:
 * Prefer approved connection utilities and environment-provided credentials
 * Do not assume Kerberos or Microsoft ODBC Driver 17/18 availability
 
+## Prior Hypothesis Retrieval (RAG)
+
+Before generating new hypotheses, retrieve semantically similar prior ones to avoid duplication and build on existing findings:
+
+```
+GET http://host.docker.internal:8081/api/hypotheses/similar?q=<url-encoded-concept>&k=10
+```
+
+Returns JSON: `{ hypotheses: [{ hypothesis_text, hypothesis_type, status, confidence_score, similarity, feature_name }] }`
+
+- `similarity` ranges 0–1 (higher = more similar)
+- Filter by `status` to find what has already been supported or rejected
+- Use this before the hypothesize stage to avoid re-proposing already-tested ideas
+
+Example (Python):
+```python
+import urllib.request, json, urllib.parse
+q = urllib.parse.quote("amyloid pathway inflammation gene expression")
+url = f"http://host.docker.internal:8081/api/hypotheses/similar?q={q}&k=10"
+with urllib.request.urlopen(url) as r:
+    prior = json.load(r)["hypotheses"]
+```
+
 ## Success Criteria
 
 A task is considered complete when:

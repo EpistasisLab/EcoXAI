@@ -69,6 +69,25 @@ class DatabaseManager {
       try { this.db.exec('ALTER TABLE agent_runs DROP COLUMN sandbox_id'); } catch (_) {}
       try { this.db.exec('ALTER TABLE agent_runs DROP COLUMN permission_mode'); } catch (_) {}
 
+      // Load sqlite-vec and create vector table for hypothesis embeddings
+      try {
+        const sqliteVec = require('sqlite-vec');
+        sqliteVec.load(this.db);
+        this.db.exec(`
+          CREATE VIRTUAL TABLE IF NOT EXISTS vec_hypotheses USING vec0(
+            embedding float[384]
+          )
+        `);
+        this._upsertEmbedding = this.db.transaction((id, buf) => {
+          this.db.prepare('DELETE FROM vec_hypotheses WHERE rowid = ?').run(BigInt(id));
+          this.db.prepare('INSERT INTO vec_hypotheses(rowid, embedding) VALUES (?, ?)').run(BigInt(id), buf);
+        });
+        console.log('sqlite-vec loaded: vec_hypotheses ready');
+      } catch (e) {
+        console.warn('[vec] sqlite-vec unavailable — hypothesis graph disabled:', e.message);
+        this._upsertEmbedding = null;
+      }
+
       return true;
     } catch (error) {
       if (this.db) {
@@ -376,6 +395,38 @@ class DatabaseManager {
 
   async deleteHypothesis(hypothesisId) {
     this._run('DELETE FROM hypotheses WHERE hypothesis_id = ?', [hypothesisId]);
+    if (this._upsertEmbedding) {
+      try { this.db.prepare('DELETE FROM vec_hypotheses WHERE rowid = ?').run(BigInt(hypothesisId)); } catch (_) {}
+    }
+  }
+
+  // ==================== Hypothesis Embeddings ====================
+
+  saveEmbedding(hypothesisId, float32Array) {
+    if (!this._upsertEmbedding) return;
+    this._upsertEmbedding(hypothesisId, Buffer.from(float32Array.buffer));
+  }
+
+  // Returns [{hypothesis_id, distance}] sorted ascending by L2 distance.
+  // For unit vectors: cosine_similarity ≈ 1 - distance²/2
+  searchSimilar(float32Array, k = 10) {
+    if (!this._upsertEmbedding) return [];
+    return this.db.prepare(
+      'SELECT rowid AS hypothesis_id, distance FROM vec_hypotheses WHERE embedding MATCH ? ORDER BY distance LIMIT ?'
+    ).all(Buffer.from(float32Array.buffer), k);
+  }
+
+  getEmbeddedIds() {
+    if (!this._upsertEmbedding) return new Set();
+    return new Set(
+      this.db.prepare('SELECT rowid AS hypothesis_id FROM vec_hypotheses').all().map(r => r.hypothesis_id)
+    );
+  }
+
+  getEmbeddingBuffer(hypothesisId) {
+    if (!this._upsertEmbedding) return null;
+    const row = this.db.prepare('SELECT embedding FROM vec_hypotheses WHERE rowid = ?').get(BigInt(hypothesisId));
+    return row ? row.embedding : null;
   }
 
   // ==================== Statistics & Analytics ====================

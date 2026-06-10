@@ -391,6 +391,21 @@ html, body { height: 100%; font-family: 'Segoe UI', system-ui, sans-serif; backg
 /* ── Hypothesis split layout ── */
 #hyp-detail { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; }
 #hyp-pane-assets, #pane-assets { padding: 0; }
+/* Hypothesis view toggle */
+.hyp-view-toggle { display: flex; gap: 4px; margin-left: auto; }
+.hyp-toggle-btn { padding: 4px 10px; border: 1px solid var(--border); border-radius: 4px; background: transparent; color: var(--text-dim); font-size: 11px; cursor: pointer; transition: background 0.15s, color 0.15s; }
+.hyp-toggle-btn:hover { background: var(--surface-2); color: var(--text); }
+.hyp-toggle-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+/* Hypothesis graph pane */
+#hyp-graph-pane { flex: 1; min-height: 0; flex-direction: column; }
+#view-hypotheses { flex-direction: column; height: 100%; }
+
+/* D3 graph node/link styles */
+#hyp-graph .hyp-node circle { cursor: pointer; transition: opacity 0.2s; }
+#hyp-graph .hyp-node text { font-size: 10px; fill: #c8d0dd; pointer-events: none; user-select: none; }
+#hyp-graph .hyp-link { fill: none; stroke-opacity: 0.4; transition: stroke-opacity 0.2s; }
+
 .hyp-split { display: flex; flex: 1; min-height: 0; overflow: hidden; }
 .hyp-list-pane { width: 360px; flex-shrink: 0; border-right: 1px solid var(--border); overflow-y: auto; padding: 12px; }
 .hyp-detail-pane { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }

@@ -38,6 +38,7 @@ const state = {
   hypSort: 'conf-desc',
   hypGroup: 'status',
   hypSearch: '',
+  hypView: 'list',
   selectedHypId: null,
   hypDetailTab: 'logs',
   hypDetailAsset: null,
@@ -871,7 +872,11 @@ function renderHypDetail() {
 // Vault toolbar listeners
 document.getElementById('hyp-search').addEventListener('input', e => {
   state.hypSearch = e.target.value;
-  renderHypotheses();
+  if (state.hypView === 'list') {
+    renderHypotheses();
+  } else {
+    hypGraphSemanticSearch(e.target.value.trim());
+  }
 });
 document.getElementById('hyp-sort').addEventListener('change', e => {
   state.hypSort = e.target.value;
@@ -881,6 +886,233 @@ document.getElementById('hyp-group').addEventListener('change', e => {
   state.hypGroup = e.target.value;
   renderHypotheses();
 });
+document.getElementById('hyp-btn-list').addEventListener('click', () => showHypView('list'));
+document.getElementById('hyp-btn-graph').addEventListener('click', () => showHypView('graph'));
+
+// ── Hypothesis Graph (native D3) ─────────────────────────────────────────────
+
+const HYP_TYPE_COLOR = {
+  genetic: '#4e79a7', metabolic: '#f28e2b', inflammatory: '#e377c2',
+  lifestyle: '#59a14f', pathology: '#b07aa1', environmental: '#76b7b2',
+  vascular: '#ff9da7', unknown: '#5a5a5a', other: '#9c9c9c',
+};
+const HYP_STATUS_COLOR = {
+  supported: '#59a14f', needs_more_data: '#f28e2b', rejected: '#e15759',
+  proposed: '#bab0ac', evidence_collected: '#4e79a7', evaluated: '#76b7b2',
+  test_requested: '#edc948',
+};
+
+let _hypSim = null;        // active D3 simulation
+let _hypNodes = [];        // current node data
+let _hypHighlightIds = null; // Set of highlighted IDs, or null = all visible
+
+function showHypView(mode) {
+  state.hypView = mode;
+  document.getElementById('hyp-split').style.display = mode === 'list' ? '' : 'none';
+  document.getElementById('hyp-graph-pane').style.display = mode === 'graph' ? 'flex' : 'none';
+  document.getElementById('hyp-btn-list').classList.toggle('active', mode === 'list');
+  document.getElementById('hyp-btn-graph').classList.toggle('active', mode === 'graph');
+  // Sort/group controls only meaningful in list mode
+  document.getElementById('hyp-sort').style.display = mode === 'list' ? '' : 'none';
+  document.getElementById('hyp-group').style.display = mode === 'list' ? '' : 'none';
+  if (mode === 'graph') renderHypGraph();
+}
+
+async function renderHypGraph() {
+  const statusEl = document.getElementById('hyp-graph-status');
+  statusEl.textContent = 'Loading graph…';
+
+  let nodes, links;
+  try {
+    const data = await fetch(`${apiBase()}/hypotheses/graph`).then(r => r.json());
+    nodes = data.nodes || [];
+    links = data.links || [];
+  } catch (e) {
+    statusEl.textContent = 'Failed to load graph: ' + e.message;
+    return;
+  }
+
+  const embeddedCount = nodes.filter(n => n.hasEmbedding).length;
+  statusEl.textContent = `${nodes.length} hypotheses · ${links.length} semantic links · ${embeddedCount} embedded`;
+
+  _hypNodes = nodes;
+  _hypHighlightIds = null;
+
+  const svg = d3.select('#hyp-graph');
+  svg.selectAll('*').remove();
+  if (_hypSim) { _hypSim.stop(); _hypSim = null; }
+
+  const el = document.getElementById('hyp-graph');
+  const w = el.clientWidth || 900;
+  const h = el.clientHeight || 600;
+
+  const nodesCopy = nodes.map(d => ({ ...d }));
+  const linksCopy = links.map(d => ({ ...d }));
+
+  const tooltip = d3.select('#hyp-graph-tooltip');
+  const detailPane = document.getElementById('hyp-graph-detail');
+
+  // Glow filter
+  const defs = svg.append('defs');
+  const glow = defs.append('filter').attr('id', 'hyp-glow')
+    .attr('x', '-60%').attr('y', '-60%').attr('width', '220%').attr('height', '220%');
+  glow.append('feGaussianBlur').attr('stdDeviation', '2.5').attr('result', 'b');
+  const merge = glow.append('feMerge');
+  merge.append('feMergeNode').attr('in', 'b');
+  merge.append('feMergeNode').attr('in', 'SourceGraphic');
+
+  const root = svg.append('g');
+  svg.call(d3.zoom().scaleExtent([0.15, 4]).on('zoom', e => root.attr('transform', e.transform)));
+
+  const maxStrength = links.length ? Math.max(...links.map(l => l.strength ?? 0), 0.01) : 1;
+
+  const link = root.append('g').selectAll('path').data(linksCopy).join('path')
+    .attr('class', 'hyp-link')
+    .attr('stroke', '#4e79a7')
+    .attr('stroke-width', d => 0.8 + 3 * ((d.strength ?? 0) / maxStrength));
+
+  const node = root.append('g').selectAll('g').data(nodesCopy).join('g')
+    .attr('class', 'hyp-node')
+    .call(hypDrag());
+
+  const circle = node.append('circle')
+    .attr('r', d => hypNodeRadius(d))
+    .attr('fill', d => HYP_TYPE_COLOR[d.category] ?? HYP_TYPE_COLOR.other)
+    .attr('stroke', d => HYP_STATUS_COLOR[d.status] ?? '#555')
+    .attr('stroke-width', 2)
+    .attr('filter', 'url(#hyp-glow)')
+    .on('mouseover', (e, d) => {
+      tooltip.html(hypNodeTip(d))
+        .style('opacity', 1)
+        .style('left', (e.pageX + 12) + 'px')
+        .style('top', (e.pageY + 12) + 'px');
+    })
+    .on('mousemove', e => {
+      tooltip.style('left', (e.pageX + 12) + 'px').style('top', (e.pageY + 12) + 'px');
+    })
+    .on('mouseout', () => tooltip.style('opacity', 0))
+    .on('click', (e, d) => hypNodeClick(d, circle, link));
+
+  node.append('text')
+    .attr('x', d => hypNodeRadius(d) + 3)
+    .attr('y', 4)
+    .text(d => d.label.slice(0, 28))
+    .style('display', 'none'); // shown on zoom via updateLabels
+
+  function updateLabels(k) {
+    node.select('text').style('display', k > 1.4 ? null : 'none');
+  }
+  svg.on('zoom.labels', e => updateLabels(e.transform.k));
+
+  _hypSim = d3.forceSimulation(nodesCopy)
+    .force('link', d3.forceLink(linksCopy).id(d => d.id).distance(d => 80 + (1 - (d.strength ?? 0)) * 80))
+    .force('charge', d3.forceManyBody().strength(-180))
+    .force('center', d3.forceCenter(w / 2, h / 2))
+    .force('collide', d3.forceCollide(d => hypNodeRadius(d) + 4))
+    .on('tick', () => {
+      link.attr('d', d => {
+        const x1 = d.source.x, y1 = d.source.y, x2 = d.target.x, y2 = d.target.y;
+        const dr = Math.hypot(x2 - x1, y2 - y1) * 1.5;
+        return `M${x1},${y1}A${dr},${dr} 0 0,1 ${x2},${y2}`;
+      });
+      node.attr('transform', d => `translate(${d.x},${d.y})`);
+    });
+}
+
+function hypNodeRadius(d) {
+  return 5 + (d.confidence != null ? d.confidence : 0.4) * 10;
+}
+
+function hypNodeTip(d) {
+  const sc = HYP_STATUS_COLOR[d.status] ?? '#bab0ac';
+  const conf = d.confidence != null ? (d.confidence * 100).toFixed(0) + '%' : 'n/a';
+  const emb = d.hasEmbedding ? '' : ' <span style="color:#888">(no embedding)</span>';
+  return `<b style="color:#e8edf3">${escHtml(d.label)}</b>${emb}<br>` +
+    `type: <b>${escHtml(d.category)}</b><br>` +
+    `<span style="color:${sc}">● ${(d.status || '').replace(/_/g, ' ')}</span><br>` +
+    `confidence: ${conf}` +
+    (d.feature_name ? `<br>feature: ${escHtml(d.feature_name)}` : '');
+}
+
+async function hypNodeClick(d, circleSelection, linkSelection) {
+  if (!d.hasEmbedding) {
+    document.getElementById('hyp-graph-detail').style.display = 'none';
+    return;
+  }
+
+  // Extract numeric ID from "h-42"
+  const numId = parseInt(d.id.replace('h-', ''));
+
+  // Fetch neighbors
+  let neighbors = [];
+  try {
+    const resp = await fetch(`${apiBase()}/hypotheses/${numId}/similar?k=8`);
+    const data = await resp.json();
+    neighbors = (data.hypotheses || []).map(h => `h-${h.hypothesis_id}`);
+  } catch (_) {}
+
+  const neighborSet = new Set([d.id, ...neighbors]);
+  _hypHighlightIds = neighborSet;
+
+  // Dim non-neighbors
+  circleSelection.style('opacity', n => neighborSet.has(n.id) ? 1 : 0.12);
+  linkSelection.style('stroke-opacity', l => {
+    const src = l.source.id ?? l.source;
+    const tgt = l.target.id ?? l.target;
+    return (neighborSet.has(src) && neighborSet.has(tgt)) ? 0.8 : 0.04;
+  });
+
+  // Show detail panel with hypothesis info + neighbors
+  const hyp = state.hypotheses.find(h => h.hypothesis_id === numId);
+  const detail = document.getElementById('hyp-graph-detail');
+  detail.style.display = 'block';
+  const sc = HYP_STATUS_COLOR[d.status] ?? '#bab0ac';
+  detail.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">
+      <span style="font-size:11px;color:${sc}">● ${(d.status || '').replace(/_/g, ' ')}</span>
+      <button onclick="this.closest('#hyp-graph-detail').style.display='none';_hypHighlightIds=null;document.querySelectorAll('#hyp-graph .hyp-node circle').forEach(c=>c.style.opacity='');document.querySelectorAll('#hyp-graph .hyp-link').forEach(l=>l.style.strokeOpacity='');"
+        style="background:none;border:none;color:#888;cursor:pointer;font-size:14px;padding:0;line-height:1">✕</button>
+    </div>
+    <div style="font-size:12px;color:#e8edf3;line-height:1.5;margin-bottom:10px">${escHtml(d.label)}${d.label.length >= 80 ? '…' : ''}</div>
+    <div style="font-size:11px;color:#5a6070;margin-bottom:4px">type: ${escHtml(d.category)}${d.feature_name ? ' · ' + escHtml(d.feature_name) : ''}</div>
+    ${neighbors.length ? `<div style="margin-top:10px;font-size:11px;color:#5a6070;border-top:1px solid #2a3040;padding-top:8px">Semantic neighbors (${neighbors.length})</div>` : ''}
+  `;
+}
+
+let _hypSearchTimer = null;
+function hypGraphSemanticSearch(q) {
+  clearTimeout(_hypSearchTimer);
+  if (!q) {
+    // Reset highlight
+    _hypHighlightIds = null;
+    d3.selectAll('#hyp-graph .hyp-node circle').style('opacity', null);
+    d3.selectAll('#hyp-graph .hyp-link').style('stroke-opacity', null);
+    return;
+  }
+  _hypSearchTimer = setTimeout(async () => {
+    try {
+      const resp = await fetch(`${apiBase()}/hypotheses/similar?q=${encodeURIComponent(q)}&k=15`);
+      const data = await resp.json();
+      const matchIds = new Set((data.hypotheses || []).map(h => `h-${h.hypothesis_id}`));
+      _hypHighlightIds = matchIds;
+      d3.selectAll('#hyp-graph .hyp-node circle')
+        .style('opacity', d => matchIds.has(d.id) ? 1 : 0.12);
+      d3.selectAll('#hyp-graph .hyp-link')
+        .style('stroke-opacity', l => {
+          const src = l.source.id ?? l.source;
+          const tgt = l.target.id ?? l.target;
+          return matchIds.has(src) || matchIds.has(tgt) ? 0.6 : 0.04;
+        });
+    } catch (_) {}
+  }, 350);
+}
+
+function hypDrag() {
+  return d3.drag()
+    .on('start', (e, d) => { if (!e.active) _hypSim.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
+    .on('drag', (e, d) => { d.fx = e.x; d.fy = e.y; })
+    .on('end', (e, d) => { if (!e.active) _hypSim.alphaTarget(0); d.fx = null; d.fy = null; });
+}
 
 // ── Skills view ───────────────────────────────────────────────────────────────
 async function loadSkillsList() {
