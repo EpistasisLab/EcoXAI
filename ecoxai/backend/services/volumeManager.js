@@ -16,6 +16,21 @@ class VolumeManager {
     this.tempDir = path.join(os.tmpdir(), 'ecoxai-volumes');
   }
 
+  async ensureImage(imageName) {
+    try {
+      await docker.getImage(imageName).inspect();
+    } catch (_) {
+      console.log(`Pulling Docker image: ${imageName}...`);
+      await new Promise((resolve, reject) => {
+        docker.pull(imageName, (err, stream) => {
+          if (err) return reject(err);
+          docker.modem.followProgress(stream, (err) => err ? reject(err) : resolve());
+        });
+      });
+      console.log(`Pulled image: ${imageName}`);
+    }
+  }
+
   /**
    * Sanitize filename for safe storage
    * @param {string} filename - Original filename
@@ -30,6 +45,9 @@ class VolumeManager {
    */
   async initializeDatasetVolume() {
     try {
+      // Ensure alpine image is available for volume operations
+      await this.ensureImage('alpine');
+
       // Check if volume exists
       const volumes = await docker.listVolumes({
         filters: { name: [DATASETS_VOLUME] },
@@ -157,7 +175,7 @@ class VolumeManager {
         AttachStderr: true,
       });
 
-      // Attach BEFORE starting
+      // Attach BEFORE starting — capture stdout/stderr for diagnostics
       const stream = await container.attach({
         stream: true,
         stdin: true,
@@ -166,18 +184,25 @@ class VolumeManager {
         hijack: true,
       });
 
+      let stderrOutput = '';
+      docker.modem.demuxStream(stream, process.stdout, { write: (chunk) => { stderrOutput += chunk.toString(); } });
+
       // Start container
       await container.start();
 
-      // Write tar data to stdin
-      stream.write(tarBuffer);
-      stream.end();
+      // Write tar data to stdin, waiting for flush before closing
+      await new Promise((resolve, reject) => {
+        stream.write(tarBuffer, (err) => {
+          if (err) return reject(err);
+          stream.end(resolve);
+        });
+      });
 
       // Wait for completion
       const result = await container.wait();
 
       if (result.StatusCode !== 0) {
-        throw new Error(`Container exited with code ${result.StatusCode}`);
+        throw new Error(`Container exited with code ${result.StatusCode}${stderrOutput ? ': ' + stderrOutput.trim() : ''}`);
       }
 
       await container.remove();

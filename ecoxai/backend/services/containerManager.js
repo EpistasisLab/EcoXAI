@@ -197,7 +197,13 @@ class ContainerManager {
         if (process.env.ANTHROPIC_DEFAULT_SONNET_MODEL) envVars.push(`ANTHROPIC_DEFAULT_SONNET_MODEL=${process.env.ANTHROPIC_DEFAULT_SONNET_MODEL}`);
       } else {
         envVars.push(`ANTHROPIC_API_KEY=${process.env.ANTHROPIC_API_KEY}`);
-        if (process.env.ANTHROPIC_BASE_URL) envVars.push(`ANTHROPIC_BASE_URL=${process.env.ANTHROPIC_BASE_URL}`);
+        if (process.env.ANTHROPIC_BASE_URL) {
+          // Translate localhost -> host.docker.internal so the container can reach the host
+          const containerBaseUrl = process.env.ANTHROPIC_BASE_URL.replace(
+            /localhost/g, 'host.docker.internal'
+          );
+          envVars.push(`ANTHROPIC_BASE_URL=${containerBaseUrl}`);
+        }
       }
       if (process.env.CLAUDE_MODEL) envVars.push(`CLAUDE_MODEL=${process.env.CLAUDE_MODEL}`);
 

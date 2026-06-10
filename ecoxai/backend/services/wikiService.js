@@ -135,8 +135,8 @@ class WikiService {
           max_tokens: 2048,
           messages: [{ role: 'user', content: prompt }],
         });
-        portrait = response.content[0].text;
-        usedLLM = true;
+        portrait = response.content.find(b => b.type === 'text')?.text;
+        usedLLM = !!portrait;
       } catch (err) {
         console.warn(`[Wiki] LLM portrait failed for ${datasetId}, using fallback:`, err.message);
       }
@@ -237,7 +237,7 @@ Answer concisely and factually based only on the information above. If the answe
         max_tokens: 1024,
         messages: [{ role: 'user', content: prompt }],
       });
-      answer = response.content[0].text;
+      answer = response.content.find(b => b.type === 'text')?.text ?? '*No response generated*';
     } catch (err) {
       answer = `*Failed to generate answer: ${err.message}*`;
     }
@@ -287,7 +287,8 @@ Answer concisely and factually based only on the information above. If the answe
         messages: [{ role: 'user', content: prompt }],
       });
 
-      const updatedPortrait = response.content[0].text;
+      const updatedPortrait = response.content.find(b => b.type === 'text')?.text;
+      if (!updatedPortrait) return;
       await this._write(datasetId, 'portrait.md', updatedPortrait);
 
       const meta = await this._readMeta(datasetId);

@@ -39,6 +39,14 @@ export ANTHROPIC_FOUNDRY_API_KEY=...
 export ANTHROPIC_DEFAULT_SONNET_MODEL='claude-sonnet-4-6'
 ```
 
+**Local model (OpenAI-compatible server, e.g. llama.cpp):**
+```bash
+export ANTHROPIC_BASE_URL="http://localhost:8001"
+export ANTHROPIC_API_KEY='sk-no-key-required'
+export CLAUDE_MODEL='unsloth/Qwen3.6-27B-MTP-GGUF:UD-Q4_K_XL'
+```
+> The backend automatically rewrites `localhost` to `host.docker.internal` when passing the URL into Docker containers.
+
 ### 2. Build the Agent Docker Image
 
 ```bash

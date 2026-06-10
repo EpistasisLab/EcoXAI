@@ -74,7 +74,8 @@ COPY CLAUDE.md /workspace/CLAUDE.md
 
 # Entry point that runs Claude Code with the task
 COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh && \
+RUN sed -i 's/\r$//' /entrypoint.sh && \
+    chmod +x /entrypoint.sh && \
     chown claude:claude /workspace/CLAUDE.md /entrypoint.sh
 
 # Switch to non-root user
