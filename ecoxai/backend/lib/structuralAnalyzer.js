@@ -29,6 +29,33 @@ async function analyze(rawPath, filename) {
   let encodingIssues = [];
   let content = null;
 
+  // Handle Excel workbooks
+  if (ext === '.xlsx' || ext === '.xls') {
+    const XLSX = require('xlsx');
+    const wb = XLSX.read(await fs.readFile(rawPath), { type: 'buffer' });
+    const sections = wb.SheetNames.map((name, i) => {
+      const sheet = wb.Sheets[name];
+      const range = XLSX.utils.decode_range(sheet['!ref'] || 'A1:A1');
+      return {
+        id: `table_${i + 1}`,
+        type: 'table',
+        confidence: 0.95,
+        sheet_name: name,
+        row_count: range.e.r,      // rows excluding header
+        column_count: range.e.c + 1
+      };
+    }).filter(s => s.row_count > 0);
+
+    return {
+      document_type: 'workbook',
+      sections,
+      encoding_issues: ['binary-format'],
+      layout_complexity: sections.length > 1 ? 'medium' : 'low',
+      total_size_bytes: (await fs.stat(rawPath)).size,
+      extension: ext
+    };
+  }
+
   // Handle binary Feather files separately
   if (ext === '.feather') {
     // Feather files are always table dumps

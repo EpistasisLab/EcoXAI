@@ -9,7 +9,7 @@ const wikiService = require('../services/wikiService');
 const PENDING_DIR = path.join(__dirname, '..', 'data', 'pending');
 
 function createDatasetsRoutes(deps) {
-  const { state, saveState, broadcast, parseCSV, parseJSON, parseFeather, volumeManager, dbManager, normalizationService, upload, orchestrator } = deps;
+  const { state, saveState, broadcast, parseCSV, parseJSON, parseFeather, parseWorkbook, volumeManager, dbManager, normalizationService, upload, orchestrator } = deps;
   const router = express.Router();
 
   router.post('/upload/dataset', upload.single('file'), async (req, res) => {
@@ -30,8 +30,11 @@ function createDatasetsRoutes(deps) {
       } else if (filename.endsWith('.feather')) {
         parsedData = await parseFeather(req.file.buffer);
         fileType = 'feather';
+      } else if (filename.endsWith('.xlsx') || filename.endsWith('.xls')) {
+        parsedData = parseWorkbook(req.file.buffer);
+        fileType = 'xlsx';
       } else {
-        return res.status(400).json({ error: 'Unsupported file type. Use CSV, JSON, or Feather.' });
+        return res.status(400).json({ error: 'Unsupported file type. Use CSV, JSON, Feather, or Excel (.xlsx/.xls).' });
       }
 
       // Store raw file — normalization runs when the user starts the pipeline

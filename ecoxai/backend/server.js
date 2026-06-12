@@ -141,6 +141,13 @@ async function parseFeather(buffer) {
   }
 }
 
+function parseWorkbook(buffer) {
+  const XLSX = require('xlsx');
+  const wb = XLSX.read(buffer, { type: 'buffer' });
+  const firstSheet = wb.Sheets[wb.SheetNames[0]];
+  return XLSX.utils.sheet_to_json(firstSheet, { defval: '' });
+}
+
 // ── Job helpers ───────────────────────────────────────────────────────────────
 function findJob(jobId) { return state.jobs.find(j => j.id === jobId); }
 
@@ -180,6 +187,7 @@ const routeDeps = {
   parseCSV,
   parseJSON,
   parseFeather,
+  parseWorkbook,
   containerManager,
   volumeManager,
   dbManager,
@@ -284,7 +292,7 @@ function watchDatasetFolder() {
     watcher.on('add', async (filePath) => {
       const filename = path.basename(filePath);
       const ext = path.extname(filename).toLowerCase();
-      if (!['.csv', '.json', '.feather'].includes(ext)) return;
+      if (!['.csv', '.json', '.feather', '.xlsx', '.xls'].includes(ext)) return;
 
       const alreadyIngested = Object.values(state.datasets).some(d => d.filename === filename);
       if (alreadyIngested) {
@@ -306,6 +314,9 @@ function watchDatasetFolder() {
         } else if (ext === '.json') {
           parsedData = parseJSON(buffer.toString('utf-8'));
           fileType = 'json';
+        } else if (ext === '.xlsx' || ext === '.xls') {
+          parsedData = parseWorkbook(buffer);
+          fileType = 'xlsx';
         } else {
           parsedData = await parseFeather(buffer);
           fileType = 'feather';
@@ -331,7 +342,7 @@ function watchDatasetFolder() {
       }
     });
 
-    console.log(`[Watcher] Watching ${datasetsDir} for CSV/JSON/Feather files`);
+    console.log(`[Watcher] Watching ${datasetsDir} for CSV/JSON/Feather/Excel files`);
   } catch (err) {
     console.warn('[Watcher] chokidar not available, file-drop watching disabled:', err.message);
   }

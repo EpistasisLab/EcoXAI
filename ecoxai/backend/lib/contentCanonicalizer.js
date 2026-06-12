@@ -25,8 +25,12 @@ async function canonicalize(rawPath, filename, structure, docsDir, tablesDir) {
 
   const artifacts = [];
 
+  // Special handling for Excel workbooks (binary format)
+  if ((ext === '.xlsx' || ext === '.xls') && structure.document_type === 'workbook') {
+    artifacts.push(...await canonicalizeWorkbook(rawPath, structure.sections, tablesDir));
+  }
   // Special handling for Feather files (binary format)
-  if (ext === '.feather' && structure.document_type === 'table_dump') {
+  else if (ext === '.feather' && structure.document_type === 'table_dump') {
     const featherArtifacts = await canonicalizeFeatherFile(
       rawPath,
       tablesDir
@@ -696,6 +700,53 @@ function generateFeatherTableMarkdown(tableName, columns, sampleRows) {
   });
 
   return lines.join('\n');
+}
+
+/**
+ * Canonicalize Excel workbook — one CSV per non-empty sheet
+ */
+async function canonicalizeWorkbook(rawPath, sections, tablesDir) {
+  const XLSX = require('xlsx');
+  const buffer = await fs.readFile(rawPath);
+  const wb = XLSX.read(buffer, { type: 'buffer' });
+  const artifacts = [];
+
+  for (const section of sections) {
+    const sheet = wb.Sheets[section.sheet_name];
+    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+    if (rows.length < 2) continue;
+
+    const headers = rows[0].map(String);
+    const dataRows = rows.slice(1).map(r => r.map(String));
+    const tableId = section.id;
+
+    const csvPath = path.join(tablesDir, `${tableId}.csv`);
+    const csvContent = [
+      headers.join(','),
+      ...dataRows.map(row => row.map(escapeCSV).join(','))
+    ].join('\n');
+    await fs.writeFile(csvPath, csvContent);
+
+    const mdPath = path.join(tablesDir, `${tableId}.md`);
+    await fs.writeFile(mdPath, generateTableMarkdown(headers, dataRows));
+
+    const metaPath = path.join(tablesDir, `${tableId}_meta.json`);
+    await fs.writeFile(metaPath, JSON.stringify(generateTableMetadata(headers, dataRows), null, 2));
+
+    artifacts.push({
+      id: tableId,
+      type: 'table',
+      format: 'csv',
+      path: csvPath,
+      markdown_path: mdPath,
+      metadata_path: metaPath,
+      row_count: dataRows.length,
+      column_count: headers.length,
+      sheet_name: section.sheet_name
+    });
+  }
+
+  return artifacts;
 }
 
 module.exports = {

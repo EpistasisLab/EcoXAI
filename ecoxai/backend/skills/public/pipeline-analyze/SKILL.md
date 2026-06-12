@@ -240,6 +240,23 @@ importance_output = [
 with open('/workspace/output/feature_importance_results.json', 'w') as f:
     json.dump(importance_output, f, indent=2)
 
+# verdict_results.json — direct hypothesis_id → verdict mapping (primary channel for status updates)
+verdict_output = [
+    {
+        'hypothesis_id': v.get('hypothesis_id', ''),
+        'verdict': v['verdict'],
+        'actual_importance': v['actual_importance'],
+        'reasoning': (
+            f"Actual importance ({v['actual_importance']:.4f}) vs "
+            f"expected ({v.get('expected_importance') or 0:.3f}): {v['verdict']}"
+        )
+    }
+    for v in verdicts
+    if v.get('hypothesis_id')
+]
+with open('/workspace/output/verdict_results.json', 'w') as f:
+    json.dump(verdict_output, f, indent=2)
+
 # test_results.md
 test_report = f"""# Hypothesis Test Results
 
@@ -329,6 +346,6 @@ for i, rec in enumerate(recommendations, 1):
 with open('/workspace/output/report.md', 'w') as f:
     f.write(report)
 
-print("Saved: feature_importance_results.json, test_results.md, report.md")
+print("Saved: feature_importance_results.json, verdict_results.json, test_results.md, report.md")
 print("SKILL_INVOKED: public:pipeline-analyze")
 ```

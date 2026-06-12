@@ -545,6 +545,34 @@ class Orchestrator extends EventEmitter {
 
     const resolvedIds = new Set();
 
+    // Path 0 — direct verdict file: verdict_results.json written by the skill with explicit hypothesis_id → verdict
+    const verdictArtifact = (artifacts || []).find(a => {
+      const name = typeof a === 'string' ? a : (a.name || a.path || '');
+      return name === 'verdict_results.json' || name.endsWith('/verdict_results.json');
+    });
+    if (verdictArtifact?.content) {
+      try {
+        const verdictData = JSON.parse(verdictArtifact.content);
+        let updated = 0;
+        for (const item of verdictData) {
+          if (!item.hypothesis_id || !['supported', 'rejected', 'needs_more_data'].includes(item.verdict)) continue;
+          await dbManager.updateHypothesis(item.hypothesis_id, {
+            status: item.verdict,
+            actual_importance: item.actual_importance ?? null,
+            evaluation_reasoning: item.reasoning || null,
+          });
+          resolvedIds.add(item.hypothesis_id);
+          updated++;
+        }
+        if (updated > 0) {
+          broadcast({ type: 'DATABASE_UPDATE', entity: 'hypotheses' });
+          console.log(`[Orchestrator] Updated ${updated} hypothesis verdicts via verdict_results.json for dataset ${datasetId}`);
+        }
+      } catch (err) {
+        console.warn('[Orchestrator] _processTestResults (verdict file) error:', err.message);
+      }
+    }
+
     // Path A — feature importance: numeric comparison for hypotheses with feature_name
     const importanceArtifact = (artifacts || []).find(a => {
       const name = typeof a === 'string' ? a : (a.name || a.path || '');

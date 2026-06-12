@@ -28,6 +28,7 @@ import pandas as pd
 import numpy as np
 import json
 import os
+import glob
 
 dataset_id = os.environ.get('DATASET_ID', '')
 domain = os.environ.get('DATASET_DOMAIN', 'unknown')
@@ -40,9 +41,16 @@ with open(f'{base}/semantic.json') as f:
 entities = semantic.get('entities', [])
 units = semantic.get('units', {})
 
-# Load data
-df = pd.read_csv(f'{base}/tables/table_1.csv')
-print(f"Loaded: {df.shape[0]} rows × {df.shape[1]} columns")
+# Discover all table CSVs (table_1.csv, table_2.csv, ...)
+table_files = sorted(glob.glob(f'{base}/tables/table_*.csv'))
+if not table_files:
+    raise FileNotFoundError(f"No table CSVs found in {base}/tables/")
+
+# Load all tables
+tables = {os.path.basename(f).replace('.csv', ''): pd.read_csv(f) for f in table_files}
+df = tables[list(tables.keys())[0]]   # primary table for cleaning/profiling
+print(f"Found {len(tables)} table(s): {list(tables.keys())}")
+print(f"Primary table: {df.shape[0]} rows × {df.shape[1]} columns")
 ```
 
 #### 2. Profile the Data
@@ -129,6 +137,14 @@ report = f"""# Exploration Report
 - **Original shape:** {df.shape[0]} rows × {df.shape[1]} columns
 - **After cleaning:** {df_clean.shape[0]} rows × {df_clean.shape[1]} columns
 - **Entities identified:** {', '.join(entities) if entities else 'none'}
+
+## Sheets / Tables
+| Table | Rows | Columns |
+|---|---|---|
+"""
+for tname, tdf in tables.items():
+    report += f"| {tname} | {tdf.shape[0]} | {tdf.shape[1]} |\n"
+report += f"""
 
 ## Data Quality
 

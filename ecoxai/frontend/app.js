@@ -193,7 +193,7 @@ function renderDatasets() {
   dot.className = 'status-dot' + (state.datasets.length > 0 ? '' : ' inactive');
 
   if (state.datasets.length === 0) {
-    list.innerHTML = '<div class="empty-state"><div class="icon">📭</div><p>No datasets yet.<br>Upload a CSV/JSON/Feather file.</p></div>';
+    list.innerHTML = '<div class="empty-state"><div class="icon">📭</div><p>No datasets yet.<br>Upload a CSV, JSON, Feather, or Excel file.</p></div>';
     const ctxSection = document.getElementById('ds-context-section');
     if (ctxSection) ctxSection.style.display = 'none';
     return;
