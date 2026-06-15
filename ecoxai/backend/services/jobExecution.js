@@ -79,20 +79,23 @@ async function startJobExecution(deps, jobId, options = {}) {
         }
       },
       (result) => {
+        // Strip in-memory Buffers before serializing to state
+        const artifactsForState = result.artifacts.map(({ buffer, ...rest }) => rest);
+
         updateJob(jobId, {
           status: (result.exitCode === 0 || result.artifacts.length > 0) ? 'completed' : 'failed',
           exitCode: result.exitCode,
-          artifacts: result.artifacts,
+          artifacts: artifactsForState,
           skillsInvoked: result.skillsInvoked || [],
           completedAt: new Date().toISOString(),
           totalCostUsd: result.totalCostUsd ?? null,
           numTurns: result.numTurns ?? null,
         });
 
-        // Save assets to local folder
+        // Save assets to local folder (pass original artifacts with binary buffers)
         const completedJob = findJob(jobId);
         const assetManager = require('./assetManager');
-        assetManager.saveJobAssets({
+        const savePromise = assetManager.saveJobAssets({
           job: completedJob,
           artifacts: result.artifacts,
           sessionLog: completedJob?.output || '',
@@ -111,7 +114,7 @@ async function startJobExecution(deps, jobId, options = {}) {
 
         console.log(`✓ Job ${jobId} completed with exit code ${result.exitCode} | cost: $${result.totalCostUsd?.toFixed(4) ?? 'n/a'} | turns: ${result.numTurns ?? 'n/a'}`);
 
-        // Notify orchestrator of job completion
+        // Notify orchestrator of job completion (orchestrator handles volume deletion)
         if (deps.orchestrator) {
           const completedJob = findJob(jobId);
           deps.orchestrator.emit('job_completed', {
@@ -121,6 +124,10 @@ async function startJobExecution(deps, jobId, options = {}) {
             stageId: completedJob?._stageId || null,
             artifacts: result.artifacts
           });
+        } else {
+          // No orchestrator — delete workspace volume once assets are saved
+          savePromise.then(() => volumeManager.deleteWorkspaceVolume(jobId))
+            .catch(err => console.warn(`[Volume] Cleanup failed for ${jobId}:`, err.message));
         }
 
         // Async wiki update — file discovery then refresh portrait

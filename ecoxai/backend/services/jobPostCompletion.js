@@ -57,59 +57,6 @@ function getModel() {
 
 // ── Standalone helpers ─────────────────────────────────────────────────────────
 
-/** Read text-based artifact files from a Docker workspace volume. */
-async function readArtifactsFromVolume(jobId, artifactsJson) {
-  if (!jobId || !artifactsJson) return [];
-
-  try {
-    const artifacts = typeof artifactsJson === 'string' ? JSON.parse(artifactsJson) : artifactsJson;
-    if (!Array.isArray(artifacts) || artifacts.length === 0) return [];
-
-    const textExtensions = ['.md', '.txt', '.json', '.csv', '.log'];
-    const textArtifacts = artifacts.filter(a =>
-      textExtensions.some(ext => (a.name || '').toLowerCase().endsWith(ext))
-    );
-    if (textArtifacts.length === 0) return [];
-
-    const Docker = require('dockerode');
-    const docker = new Docker();
-    const results = [];
-
-    for (const artifact of textArtifacts) {
-      try {
-        const container = await docker.createContainer({
-          Image: 'alpine',
-          Cmd: ['cat', artifact.actualPath || artifact.path],
-          HostConfig: {
-            Binds: [`ecoxai-workspace-${jobId}:/workspace:ro`],
-            AutoRemove: false
-          }
-        });
-
-        await container.start();
-        await container.wait();
-        const logs = await container.logs({ stdout: true, stderr: false });
-        const content = logs.toString('utf8');
-        await container.remove().catch(() => {});
-
-        if (content.length > 0) {
-          results.push({
-            name: artifact.name,
-            content: content.length < 50000 ? content.trim() : content.substring(0, 50000) + '\n\n[... truncated ...]'
-          });
-        }
-      } catch (e) {
-        console.warn(`[readArtifactsFromVolume] Failed to read ${artifact.name}:`, e.message);
-      }
-    }
-
-    return results;
-  } catch (e) {
-    console.error('[readArtifactsFromVolume] Error:', e);
-    return [];
-  }
-}
-
 /** Extract JSON from an AI response — handles markdown fences, trailing commas, incomplete JSON. */
 function extractJSON(responseText) {
   let cleaned = responseText.replace(/<thinking>[\s\S]*?<\/thinking>/g, '');

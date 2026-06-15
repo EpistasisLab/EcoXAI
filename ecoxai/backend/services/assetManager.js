@@ -29,13 +29,17 @@ async function saveJobAssets({ job, artifacts, sessionLog }) {
     filesWritten.push('session.log');
   }
 
-  // Write each artifact that has content
+  // Write each artifact that has content or a binary buffer
   for (const artifact of artifacts || []) {
-    if (!artifact.content) continue;
     const filename = path.basename(artifact.name || artifact.path || 'artifact');
     const dest = path.join(assetDir, filename);
-    await fs.writeFile(dest, artifact.content, 'utf-8');
-    filesWritten.push(filename);
+    if (artifact.buffer) {
+      await fs.writeFile(dest, artifact.buffer);
+      filesWritten.push(filename);
+    } else if (artifact.content) {
+      await fs.writeFile(dest, artifact.content, 'utf-8');
+      filesWritten.push(filename);
+    }
   }
 
   // Write meta.json
@@ -57,4 +61,10 @@ async function saveJobAssets({ job, artifacts, sessionLog }) {
   return { assetDir, filesWritten };
 }
 
-module.exports = { saveJobAssets };
+async function readJobArtifact(jobId, title, filename) {
+  const assetDir = getAssetDir(jobId, title);
+  const filePath = path.join(assetDir, path.basename(filename));
+  return fs.readFile(filePath);
+}
+
+module.exports = { saveJobAssets, readJobArtifact };

@@ -148,6 +148,7 @@ class Orchestrator extends EventEmitter {
           console.warn('[Orchestrator] Verdict processing failed:', err.message)
         );
         await this._runNextHypothesisAnalysis(datasetId);
+        await this._deleteWorkspaceVolume(jobId);
         return; // analyze doesn't advance to a further stage
       }
 
@@ -163,6 +164,9 @@ class Orchestrator extends EventEmitter {
 
       // Trigger next stage based on completed stage
       await this._maybeAdvance(`job_completed:${stageId}`, { datasetId, jobId });
+
+      // Delete workspace volume after all stage-specific processing is complete
+      await this._deleteWorkspaceVolume(jobId);
     });
 
     // When hypotheses are extracted → run one analyze job per hypothesis, sequentially
@@ -537,6 +541,15 @@ class Orchestrator extends EventEmitter {
       this.deps.broadcast({ type: 'PIPELINE_STAGE_CONFIG_UPDATE', stage: updated });
     }
     return updated;
+  }
+
+  async _deleteWorkspaceVolume(jobId) {
+    const { volumeManager } = this.deps;
+    if (volumeManager) {
+      await volumeManager.deleteWorkspaceVolume(jobId).catch(err =>
+        console.warn(`[Orchestrator] Failed to delete workspace volume for ${jobId}:`, err.message)
+      );
+    }
   }
 
   async _processTestResults(datasetId, artifacts, hypothesisId = null) {

@@ -1,9 +1,24 @@
 'use strict';
 
 const express = require('express');
+const path = require('path');
 const router = express.Router();
 
-function createJobsRoutes({ state, saveState, broadcast, findJob, updateJob, containerManager, volumeManager }) {
+const CONTENT_TYPES = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.svg': 'image/svg+xml',
+  '.pdf': 'application/pdf',
+  '.html': 'text/html',
+  '.md': 'text/markdown',
+  '.txt': 'text/plain',
+  '.json': 'application/json',
+  '.csv': 'text/csv',
+};
+
+function createJobsRoutes({ state, saveState, broadcast, findJob, updateJob, containerManager }) {
 
   router.post('/jobs/:id/stop', async (req, res) => {
     const job = findJob(req.params.id);
@@ -30,12 +45,17 @@ function createJobsRoutes({ state, saveState, broadcast, findJob, updateJob, con
     const { id, filename } = req.params;
     const job = findJob(id);
     if (!job) return res.status(404).json({ error: 'Job not found' });
+
+    const ext = path.extname(filename).toLowerCase();
+    const contentType = CONTENT_TYPES[ext];
+
     try {
-      const content = await volumeManager.readArtifact(id, filename);
-      res.set('Content-Disposition', `attachment; filename="${filename}"`);
-      res.send(content);
-    } catch (error) {
-      res.status(404).json({ error: 'Artifact not found' });
+      const assetManager = require('../services/assetManager');
+      const content = await assetManager.readJobArtifact(job.id, job.title, filename);
+      if (contentType) res.set('Content-Type', contentType);
+      return res.send(content);
+    } catch (_) {
+      return res.status(404).json({ error: 'Artifact not found' });
     }
   });
 

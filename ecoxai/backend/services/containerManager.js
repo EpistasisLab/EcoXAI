@@ -393,13 +393,19 @@ class ContainerManager {
             if (EXCLUDE_EXCEPT_EXPLORE.has(filename) && stageId !== 'explore') return false;
             return true;
           });
+        const BINARY_EXTS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.svg', '.pdf']);
         for (const filePath of filePaths) {
           const filename = filePath.split('/').pop();
-          // Read artifact content
+          const ext = path.extname(filename).toLowerCase();
+          const isBinary = BINARY_EXTS.has(ext);
           try {
             const volumeManager = require('./volumeManager');
-            const content = (await volumeManager.readArtifact(jobId, filename.startsWith('/') ? filename : filePath.replace('/workspace/', ''))).toString('utf-8');
-            artifacts.push({ name: filename, path: filePath.replace('/workspace/', ''), jobId, content });
+            const raw = await volumeManager.readArtifact(jobId, filename.startsWith('/') ? filename : filePath.replace('/workspace/', ''));
+            if (isBinary) {
+              artifacts.push({ name: filename, path: filePath.replace('/workspace/', ''), jobId, buffer: raw });
+            } else {
+              artifacts.push({ name: filename, path: filePath.replace('/workspace/', ''), jobId, content: raw.toString('utf-8') });
+            }
           } catch (readErr) {
             artifacts.push({ name: filename, path: filePath.replace('/workspace/', ''), jobId });
           }

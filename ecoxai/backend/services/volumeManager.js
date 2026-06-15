@@ -649,6 +649,20 @@ class VolumeManager {
   }
 
   /**
+   * Delete a job's workspace volume after all processing is complete.
+   * @param {string} jobId - Job ID
+   */
+  async deleteWorkspaceVolume(jobId) {
+    const volumeName = `${WORKSPACE_PREFIX}${jobId}`;
+    try {
+      await docker.getVolume(volumeName).remove();
+      console.log(`[Volume] Deleted workspace volume ${volumeName}`);
+    } catch (err) {
+      console.warn(`[Volume] Could not delete ${volumeName}:`, err.message);
+    }
+  }
+
+  /**
    * Read a file from a Docker volume using a temporary Alpine container
    * Uses the same approach as readArtifact for consistency
    * @param {string} volumeName - Name of the volume
