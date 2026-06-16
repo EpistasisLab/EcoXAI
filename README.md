@@ -75,6 +75,8 @@ python3 -m http.server 3000
 
 Drop a `.csv`, `.json`, or `.feather` file into `ecoxai/backend/datasets/`. The server watches the directory and automatically ingests the file, triggering the full pipeline.
 
+Click on your dataset after it is ingested to add additional context to the dataset, as well as the research question you are trying to answer.
+
 ---
 
 ## Resetting State

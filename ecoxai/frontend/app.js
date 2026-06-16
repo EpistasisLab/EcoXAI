@@ -196,8 +196,14 @@ function renderDatasets() {
     list.innerHTML = '<div class="empty-state"><div class="icon">📭</div><p>No datasets yet.<br>Upload a CSV, JSON, Feather, or Excel file.</p></div>';
     const ctxSection = document.getElementById('ds-context-section');
     if (ctxSection) ctxSection.style.display = 'none';
+    const dsBtn = document.getElementById('ds-pipeline-btn');
+    if (dsBtn) dsBtn.disabled = true;
     return;
   }
+
+  const dsBtn = document.getElementById('ds-pipeline-btn');
+  if (dsBtn) dsBtn.disabled = false;
+
   if (!state.selectedDatasetId) {
     const ctxSection = document.getElementById('ds-context-section');
     if (ctxSection) ctxSection.style.display = 'none';
@@ -211,11 +217,11 @@ function renderDatasets() {
     const selected = ds.id === state.selectedDatasetId ? ' selected' : '';
     return `
       <div class="dataset-card${selected}" onclick="app.selectDataset('${ds.id}')">
-        <div class="ds-name">${escHtml(ds.filename || ds.id)} <span class="ds-badge">${escHtml(ds.type || 'csv')}</span>${pending ? ' <span class="auto-badge off" style="font-size:9px;padding:1px 5px">PENDING</span>' : ''}</div>
+        <div class="ds-name">${escHtml(ds.filename || ds.id)} <span class="ds-badge">${escHtml(ds.type || 'csv')}</span>${pending ? ' <span class="spinner" style="width:9px;height:9px;border-width:1.5px;vertical-align:middle;margin-left:4px"></span>' : ''}</div>
         <div class="ds-meta">
           <span>${(ds.recordCount || 0).toLocaleString()} rows</span>
           <span>${ds.columnCount || 0} cols</span>
-          ${pending ? '<span style="color:var(--text-dim)">not yet normalized</span>' : `<span class="${confClass}">conf ${confStr}</span>`}
+          ${pending ? '<span style="color:var(--yellow)">normalizing…</span>' : `<span class="${confClass}">quality ${confStr}</span>`}
           ${ds.normalization?.domain ? `<span>${escHtml(ds.normalization.domain)}</span>` : ''}
           <span>${formatDate(ds.uploadedAt)}</span>
         </div>
@@ -243,14 +249,28 @@ async function loadWiki(datasetId) {
 document.getElementById('file-upload').addEventListener('change', async (e) => {
   const file = e.target.files[0];
   if (!file) return;
+
+  const uploadArea = document.querySelector('.upload-area');
+  const statusEl   = document.getElementById('upload-status');
+
+  uploadArea.classList.add('uploading');
+  statusEl.className = '';
+  statusEl.textContent = '';
+
   const fd = new FormData();
   fd.append('file', file);
   try {
     const resp = await fetch(`${apiBase()}/upload/dataset`, { method: 'POST', body: fd });
     const data = await resp.json();
     if (!data.success) throw new Error(data.error);
+    statusEl.className = 'success';
+    statusEl.textContent = '✓ Uploaded — normalizing…';
+    setTimeout(() => { statusEl.textContent = ''; statusEl.className = ''; }, 3000);
   } catch (err) {
-    alert('Upload failed: ' + err.message);
+    statusEl.className = 'error';
+    statusEl.textContent = 'Upload failed: ' + err.message;
+  } finally {
+    uploadArea.classList.remove('uploading');
   }
   e.target.value = '';
 });
@@ -346,8 +366,11 @@ function updateAutoModeBadge(autoMode) {
     dsBadge.textContent = autoMode ? 'AUTO' : 'PAUSED';
     dsBadge.className = 'auto-badge ' + (autoMode ? 'on' : 'off');
   }
-  if (dsMsg) dsMsg.textContent = autoMode ? 'Pipeline is running — stages will advance automatically.' : 'Pipeline is paused — upload a dataset and start when ready.';
-  if (dsBtn) dsBtn.textContent = autoMode ? 'Pause Pipeline' : 'Start Pipeline';
+  if (dsMsg) dsMsg.textContent = autoMode ? 'Pipeline is running — stages will advance automatically.' : 'Upload a dataset above, then start the pipeline.';
+  if (dsBtn) {
+    dsBtn.textContent = autoMode ? 'Pause Pipeline' : 'Start Pipeline';
+    dsBtn.disabled = !autoMode && state.datasets.length === 0;
+  }
 }
 
 function appendJobLog(jobId, chunk) {
@@ -709,17 +732,46 @@ function renderHypDetail() {
 
   if (!state.selectedHypId) {
     panel.innerHTML = `<div class="detail-empty"><div style="font-size:32px;margin-bottom:8px">🔬</div><p>Select a hypothesis to view details</p></div>`;
+    panel.dataset.renderedHypId = '';
     return;
   }
 
   const hyp = state.hypotheses.find(h => h.hypothesis_id === state.selectedHypId);
   if (!hyp) {
     panel.innerHTML = `<div class="detail-empty"><p>Hypothesis not found</p></div>`;
+    panel.dataset.renderedHypId = '';
     return;
   }
 
   const job = findHypTestJob(hyp);
   const tab = state.hypDetailTab;
+
+  // Targeted update: patch in-place when same hyp/tab/job-presence is already rendered
+  if (
+    panel.dataset.renderedHypId == state.selectedHypId &&
+    panel.dataset.renderedTab === tab &&
+    panel.dataset.renderedHasJob === String(!!job)
+  ) {
+    const hypStatusEl = panel.querySelector('.hyp-detail-status');
+    if (hypStatusEl) {
+      hypStatusEl.className = `status-badge hyp-detail-status ${hyp.status || 'proposed'}`;
+      hypStatusEl.textContent = hyp.status || 'proposed';
+    }
+    if (job) {
+      const jobStatusEl = panel.querySelector('.hyp-job-status');
+      if (jobStatusEl) {
+        jobStatusEl.className = `status-badge hyp-job-status ${job.status || 'unknown'}`;
+        jobStatusEl.textContent = job.status || 'unknown';
+      }
+      const costEl = panel.querySelector('.hyp-job-cost');
+      if (costEl && job.totalCostUsd != null) costEl.textContent = `$${job.totalCostUsd.toFixed(4)}`;
+    }
+    return;
+  }
+
+  panel.dataset.renderedHypId = state.selectedHypId;
+  panel.dataset.renderedTab = tab;
+  panel.dataset.renderedHasJob = String(!!job);
 
   const conf = hyp.confidence_score != null
     ? `<span class="hyp-conf">conf ${(hyp.confidence_score * 100).toFixed(0)}%</span>` : '';
@@ -744,7 +796,7 @@ function renderHypDetail() {
     const jobLabel = job._stageId === 'analyze' ? 'Analysis Job'
       : job._stageId ? job._stageId.charAt(0).toUpperCase() + job._stageId.slice(1) + ' Job'
       : 'Job';
-    const jCost = job.totalCostUsd != null ? `<span style="color:var(--green)">$${job.totalCostUsd.toFixed(4)}</span>` : '';
+    const jCost = job.totalCostUsd != null ? `<span class="hyp-job-cost" style="color:var(--green)">$${job.totalCostUsd.toFixed(4)}</span>` : '';
     const jTurns = job.numTurns != null ? `<span style="color:var(--text-dim)">${job.numTurns}t</span>` : '';
     const artCount = (job.artifacts || []).length;
     const logContent = escHtml(state.activeJobLogs[job.id] || job.output || '(no output yet)');
@@ -753,7 +805,7 @@ function renderHypDetail() {
       <div class="hyp-job-section">
         <div class="hyp-job-header">
           <span class="hyp-job-label">${jobLabel}</span>
-          <span class="status-badge ${escHtml(job.status || 'unknown')}">${escHtml(job.status || 'unknown')}</span>
+          <span class="status-badge hyp-job-status ${escHtml(job.status || 'unknown')}">${escHtml(job.status || 'unknown')}</span>
           <span class="hyp-job-title">${escHtml(job.title || job.id)}</span>
           ${jCost}${jTurns}
         </div>
@@ -778,7 +830,7 @@ function renderHypDetail() {
     <div class="detail-header">
       <div class="detail-title" style="line-height:1.5">${escHtml(hyp.hypothesis_text)}</div>
       <div class="detail-meta" style="margin-top:8px">
-        <span class="status-badge ${escHtml(hyp.status || 'proposed')}">${escHtml(hyp.status || 'proposed')}</span>
+        <span class="status-badge hyp-detail-status ${escHtml(hyp.status || 'proposed')}">${escHtml(hyp.status || 'proposed')}</span>
         ${conf}${type}${feat}${importanceHtml}
       </div>
       ${extraDetails ? `<div class="hyp-expand-detail" style="margin-top:10px">${extraDetails}</div>` : ''}
