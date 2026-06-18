@@ -7,7 +7,7 @@
   --bg-rgb: 15, 17, 23;
   --border: #574444;
   --text: #f5f5f5;
-  --text-dim: #8b7e7e;
+  --text-dim: #d8d8d8;
   --text-on-bg: #1f1410;
   --text-dim-on-bg: #6b5050;
   --accent: #98a574;
@@ -437,9 +437,10 @@ html, body { height: 100%; font-family: 'Segoe UI', system-ui, sans-serif; backg
 .settings-row label { flex: 1; font-size: 13px; color: var(--text); }
 .settings-input { background: var(--bg2); border: 1px solid var(--border); border-radius: 5px; padding: 5px 10px; color: var(--text); font-size: 12px; width: 160px; outline: none; color-scheme: dark; }
 .settings-input:focus { border-color: var(--accent); }
+#s-budget-spent { color: var(--text); }
 
 /* ── Empty state ── */
-.empty-state { text-align: center; color: var(--text-dim); padding: 32px 16px; }
+.empty-state { text-align: center; color: #392e2e; padding: 32px 16px; }
 .empty-state .icon { font-size: 32px; margin-bottom: 8px; }
 .empty-state p { font-size: 12px; line-height: 1.6; }
 

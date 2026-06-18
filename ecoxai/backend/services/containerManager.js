@@ -394,19 +394,24 @@ class ContainerManager {
             return true;
           });
         const BINARY_EXTS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.svg', '.pdf']);
-        for (const filePath of filePaths) {
+        const volumeManager = require('./volumeManager');
+        const relativePaths = filePaths.map(fp => fp.replace('/workspace/', ''));
+        const readResults = await volumeManager.readArtifacts(jobId, relativePaths);
+
+        for (let i = 0; i < filePaths.length; i++) {
+          const filePath = filePaths[i];
           const filename = filePath.split('/').pop();
           const ext = path.extname(filename).toLowerCase();
           const isBinary = BINARY_EXTS.has(ext);
-          try {
-            const volumeManager = require('./volumeManager');
-            const raw = await volumeManager.readArtifact(jobId, filename.startsWith('/') ? filename : filePath.replace('/workspace/', ''));
+          const result = readResults[i];
+
+          if (result.buffer) {
             if (isBinary) {
-              artifacts.push({ name: filename, path: filePath.replace('/workspace/', ''), jobId, buffer: raw });
+              artifacts.push({ name: filename, path: filePath.replace('/workspace/', ''), jobId, buffer: result.buffer });
             } else {
-              artifacts.push({ name: filename, path: filePath.replace('/workspace/', ''), jobId, content: raw.toString('utf-8') });
+              artifacts.push({ name: filename, path: filePath.replace('/workspace/', ''), jobId, content: result.buffer.toString('utf-8') });
             }
-          } catch (readErr) {
+          } else {
             artifacts.push({ name: filename, path: filePath.replace('/workspace/', ''), jobId });
           }
         }

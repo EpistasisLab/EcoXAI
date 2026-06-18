@@ -146,72 +146,13 @@ function generateJSONOutput(features) {
  * @param {Object} json - JSON content
  */
 async function saveReportToWorkspace(jobId, markdown, json) {
-  const Docker = require('dockerode');
-  const docker = new Docker();
-
-  try {
-    // Write report.md using Docker volume
-    const writeContainer = await docker.createContainer({
-      Image: 'alpine',
-      Cmd: ['sh', '-c', `cat > /workspace/report.md`],
-      Tty: false,
-      OpenStdin: true,
-      StdinOnce: true,
-      HostConfig: {
-        Binds: [`ecoxai-workspace-${jobId}:/workspace`],
-        AutoRemove: true
-      }
-    });
-
-    await writeContainer.start();
-
-    // Attach to stdin
-    const stream = await writeContainer.attach({
-      stream: true,
-      stdin: true,
-      stdout: false,
-      stderr: false
-    });
-
-    // Write markdown content
-    stream.write(markdown);
-    stream.end();
-
-    await writeContainer.wait();
-
-    // Write feature_importance.json
-    const jsonContainer = await docker.createContainer({
-      Image: 'alpine',
-      Cmd: ['sh', '-c', `cat > /workspace/feature_importance.json`],
-      Tty: false,
-      OpenStdin: true,
-      StdinOnce: true,
-      HostConfig: {
-        Binds: [`ecoxai-workspace-${jobId}:/workspace`],
-        AutoRemove: true
-      }
-    });
-
-    await jsonContainer.start();
-
-    const jsonStream = await jsonContainer.attach({
-      stream: true,
-      stdin: true,
-      stdout: false,
-      stderr: false
-    });
-
-    jsonStream.write(JSON.stringify(json, null, 2));
-    jsonStream.end();
-
-    await jsonContainer.wait();
-
-    console.log(`✓ Saved feature importance report to workspace ${jobId}`);
-
-  } catch (error) {
-    console.error('Failed to save report to workspace:', error);
-    throw error;
-  }
+  const volumeManager = require('./volumeManager');
+  const ok = await volumeManager.writeWorkspaceFiles(jobId, {
+    'report.md': markdown,
+    'feature_importance.json': JSON.stringify(json, null, 2),
+  });
+  if (!ok) throw new Error(`Failed to save feature importance report to workspace ${jobId}`);
+  console.log(`✓ Saved feature importance report to workspace ${jobId}`);
 }
 
 module.exports = {

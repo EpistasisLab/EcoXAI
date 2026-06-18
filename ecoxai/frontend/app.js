@@ -47,6 +47,7 @@ const state = {
   selectedSkillId: null,
   skillDraft: null,
   skillsLoaded: false,
+  showNewSkillForm: false,
   serverBudget: { totalCostUsd: 0, jobCount: 0 },
   serverSettings: { budgetLimitUsd: 10, maxParallelJobs: 3 },
 };
@@ -462,9 +463,9 @@ function renderStageDetail(stageId) {
         <div class="stage-config-label">Skills</div>
         <div class="skill-chips">${skillChips || '<span style="font-size:11px;color:var(--text-dim)">No skills attached</span>'}</div>
         <div class="skill-add-row">
-          <input type="text" id="skill-add-input" class="settings-input" placeholder="visibility:skill-name" style="flex:1;width:auto" list="skill-suggestions">
+          <input type="text" id="skill-add-input" class="settings-input" placeholder="visibility:skill-name" style="flex:1;width:auto" list="skill-suggestions" onkeydown="if(event.key==='Enter'){event.preventDefault();app.addDraftSkill();}">
           <datalist id="skill-suggestions">${suggestions}</datalist>
-          <button class="btn" onclick="app.addDraftSkill()">Add</button>
+          <button type="button" class="btn" onclick="app.addDraftSkill()">Add</button>
         </div>
       </div>
       <div class="stage-config-section">
@@ -1112,8 +1113,25 @@ function renderSkillsList() {
   const countEl = document.getElementById('skills-count');
   if (countEl) countEl.textContent = skills.length;
 
+  const newSkillFormHtml = state.showNewSkillForm ? `
+    <div style="padding:8px;display:flex;flex-direction:column;gap:6px;border-bottom:1px solid var(--border)">
+      <select id="new-skill-vis" class="settings-input" style="width:100%">
+        <option value="public">public</option>
+        <option value="hypotheses">hypotheses</option>
+      </select>
+      <input id="new-skill-name" class="settings-input" style="width:100%;box-sizing:border-box"
+             placeholder="skill-name (e.g. pipeline-test)">
+      <div style="display:flex;gap:6px">
+        <button class="btn primary" style="flex:1" onclick="app.createSkill()">Create</button>
+        <button class="btn" onclick="app.hideNewSkillForm()">Cancel</button>
+      </div>
+      <div id="new-skill-error" style="font-size:11px;color:var(--red);min-height:14px"></div>
+    </div>` : '';
+
   if (skills.length === 0) {
-    list.innerHTML = '<div class="empty-state" style="padding:24px"><div class="icon" style="font-size:24px">🛠</div><p>No skills found.</p></div>';
+    list.innerHTML = `<div style="padding:8px"><button class="btn primary" style="width:100%" onclick="app.showNewSkillForm()">+ New Skill</button></div>
+      ${newSkillFormHtml}
+      <div class="empty-state" style="padding:24px"><div class="icon" style="font-size:24px">🛠</div><p>No skills found.</p></div>`;
     return;
   }
 
@@ -1122,7 +1140,8 @@ function renderSkillsList() {
     (groups[s.visibility] = groups[s.visibility] || []).push(s);
   }
 
-  list.innerHTML = Object.keys(groups).sort().map(vis => `
+  list.innerHTML = `<div style="padding:8px"><button class="btn primary" style="width:100%" onclick="app.showNewSkillForm()">+ New Skill</button></div>
+    ${newSkillFormHtml}` + Object.keys(groups).sort().map(vis => `
     <div class="skill-group">
       <div class="skill-group-header">${escHtml(vis)}</div>
       ${groups[vis].map(s => {
@@ -1291,6 +1310,12 @@ window.app = {
     const input = document.getElementById('skill-add-input');
     const val = input?.value.trim();
     if (!val) return;
+    if (!val.includes(':')) {
+      input.setCustomValidity('Format must be visibility:skill-name (e.g. public:pipeline-explore)');
+      input.reportValidity();
+      return;
+    }
+    input.setCustomValidity('');
     const stage = (state.pipeline.stages || []).find(s => s.id === state.selectedStageId);
     if (!stage) return;
     if (!state.stageDraft) state.stageDraft = { skill: [...(stage.skill || [])], prompt: stage.prompt || '' };
@@ -1325,6 +1350,12 @@ window.app = {
       state.stageDraft = null;
       renderPipeline();
       renderStageDetail(stageId);
+      const detail = document.getElementById('pipeline-detail');
+      const savedMsg = document.createElement('div');
+      savedMsg.style.cssText = 'padding:6px 16px;font-size:12px;color:var(--green)';
+      savedMsg.textContent = '✓ Saved';
+      detail.appendChild(savedMsg);
+      setTimeout(() => savedMsg.remove(), 2000);
     } catch (e) {
       alert('Save failed: ' + e.message);
     }
@@ -1442,6 +1473,44 @@ window.app = {
       const data = await resp.json();
       if (data.budget) { state.serverBudget = data.budget; renderBudgetStatus(); }
     } catch (e) { console.warn('Failed to reset budget:', e); }
+  },
+
+  showNewSkillForm() {
+    state.showNewSkillForm = true;
+    renderSkillsList();
+    document.getElementById('new-skill-name')?.focus();
+  },
+
+  hideNewSkillForm() {
+    state.showNewSkillForm = false;
+    renderSkillsList();
+  },
+
+  async createSkill() {
+    const vis = document.getElementById('new-skill-vis')?.value ?? 'public';
+    const name = (document.getElementById('new-skill-name')?.value ?? '').trim();
+    const errEl = document.getElementById('new-skill-error');
+    if (!name) { if (errEl) errEl.textContent = 'Name is required.'; return; }
+    if (!/^[a-zA-Z0-9_-]+$/.test(name)) {
+      if (errEl) errEl.textContent = 'Only letters, numbers, hyphens, and underscores allowed.';
+      return;
+    }
+    if (errEl) errEl.textContent = '';
+    try {
+      const resp = await fetch(`${apiBase()}/pipeline/skills`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ visibility: vis, name }),
+      });
+      const data = await resp.json();
+      if (!data.success) { if (errEl) errEl.textContent = data.error || 'Failed to create skill.'; return; }
+      state.showNewSkillForm = false;
+      state.skillsLoaded = false;
+      await loadSkillsList();
+      app.selectSkill(data.skill.id);
+    } catch (e) {
+      if (errEl) errEl.textContent = 'Request failed: ' + e.message;
+    }
   },
 
   async selectSkill(skillId) {

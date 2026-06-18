@@ -65,6 +65,42 @@ function createPipelineRoutes({ orchestrator }) {
     }
   });
 
+  router.post('/pipeline/skills', async (req, res) => {
+    const { visibility, name, content } = req.body || {};
+    if (!visibility || !name) {
+      return res.status(400).json({ success: false, error: 'visibility and name are required' });
+    }
+    if (!/^[a-zA-Z0-9_-]+$/.test(visibility) || !/^[a-zA-Z0-9_-]+$/.test(name)) {
+      return res.status(400).json({ success: false, error: 'visibility and name may only contain letters, numbers, hyphens, and underscores' });
+    }
+    const skillDir = path.join(SKILLS_DIR, visibility, name);
+    try {
+      await fs.stat(skillDir);
+      return res.status(409).json({ success: false, error: `Skill "${visibility}:${name}" already exists` });
+    } catch { /* does not exist — proceed */ }
+    const defaultContent = typeof content === 'string' ? content : `---
+name: ${name}
+description:
+when:
+visibility: ${visibility}
+tags: []
+author: user
+version: 1.0.0
+---
+
+## Instructions
+
+Describe what the agent should do here.
+`;
+    try {
+      await fs.mkdir(skillDir, { recursive: true });
+      await fs.writeFile(path.join(skillDir, 'SKILL.md'), defaultContent, 'utf8');
+      res.json({ success: true, skill: { id: `${visibility}:${name}`, visibility, name } });
+    } catch (err) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
   router.get('/pipeline/skills/:visibility/:name/content', async (req, res) => {
     const { visibility, name } = req.params;
     const skillPath = path.join(SKILLS_DIR, visibility, name, 'SKILL.md');

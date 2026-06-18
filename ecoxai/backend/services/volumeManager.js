@@ -123,6 +123,7 @@ class VolumeManager {
    * @param {string} normalizedPath - Path to normalized directory structure
    */
   async copyNormalizedDatasetToVolume(datasetId, normalizedPath) {
+    let container;
     try {
       // Build tar archive using tar-stream (cross-platform, no shell needed)
       const pack = tar.pack();
@@ -162,7 +163,7 @@ class VolumeManager {
       const tarBuffer = Buffer.concat(chunks);
 
       // Copy tar to volume and extract
-      const container = await docker.createContainer({
+      container = await docker.createContainer({
         Image: 'alpine',
         Cmd: ['sh', '-c', `mkdir -p /datasets/${datasetId} && tar -xf - -C /datasets/${datasetId}`],
         HostConfig: {
@@ -205,8 +206,6 @@ class VolumeManager {
         throw new Error(`Container exited with code ${result.StatusCode}${stderrOutput ? ': ' + stderrOutput.trim() : ''}`);
       }
 
-      await container.remove();
-
       console.log(`✓ Copied normalized dataset ${datasetId} to volume (${tarBuffer.length} bytes)`);
 
       return {
@@ -217,6 +216,11 @@ class VolumeManager {
     } catch (error) {
       console.error(`Error copying normalized dataset to volume:`, error.message);
       return { success: false, error: error.message };
+    } finally {
+      if (container) {
+        await container.stop({ t: 0 }).catch(() => {});
+        await container.remove().catch(() => {});
+      }
     }
   }
 
@@ -227,6 +231,7 @@ class VolumeManager {
    * @param {string} jobId - Completed explore job ID
    */
   async copyCleanedDatasetToVolume(datasetId, jobId) {
+    let container;
     try {
       const content = await this.readArtifact(jobId, 'cleaned_data.csv');
 
@@ -247,7 +252,7 @@ class VolumeManager {
       await packFinished;
       const tarBuffer = Buffer.concat(chunks);
 
-      const container = await docker.createContainer({
+      container = await docker.createContainer({
         Image: 'alpine',
         Cmd: ['sh', '-c', `mkdir -p /datasets/${datasetId}/cleaned && tar -xf - -C /datasets/${datasetId}`],
         HostConfig: { Binds: [`${DATASETS_VOLUME}:/datasets`] },
@@ -264,13 +269,17 @@ class VolumeManager {
       stream.end();
       const result = await container.wait();
       if (result.StatusCode !== 0) throw new Error(`Container exited with code ${result.StatusCode}`);
-      await container.remove();
 
       console.log(`✓ Copied cleaned_data.csv to datasets volume for ${datasetId} (${content.length} bytes)`);
       return true;
     } catch (error) {
       console.error(`Error copying cleaned dataset to volume for ${datasetId}:`, error.message);
       return false;
+    } finally {
+      if (container) {
+        await container.stop({ t: 0 }).catch(() => {});
+        await container.remove().catch(() => {});
+      }
     }
   }
 
@@ -280,12 +289,12 @@ class VolumeManager {
    * @param {string} filename - Original filename
    */
   async removeDatasetFromVolume(datasetId, filename) {
+    let container;
     try {
-      // Sanitize filename to match what was saved
       const sanitizedFilename = this.sanitizeFilename(filename);
       const targetPath = `/datasets/${datasetId}_${sanitizedFilename}`;
 
-      const container = await docker.createContainer({
+      container = await docker.createContainer({
         Image: 'alpine',
         Cmd: ['rm', '-f', targetPath],
         HostConfig: {
@@ -295,13 +304,17 @@ class VolumeManager {
 
       await container.start();
       await container.wait();
-      await container.remove();
 
       console.log(`✓ Removed dataset ${datasetId} from volume`);
       return true;
     } catch (error) {
       console.error(`Error removing dataset from volume:`, error.message);
       return false;
+    } finally {
+      if (container) {
+        await container.stop({ t: 0 }).catch(() => {});
+        await container.remove().catch(() => {});
+      }
     }
   }
 
@@ -388,11 +401,12 @@ class VolumeManager {
   async writeWorkspaceFile(jobId, filename, content) {
     const volumeName = `${WORKSPACE_PREFIX}${jobId}`;
     const safeName = filename.replace(/'/g, "'\\''");
+    let container;
 
     try {
       const buffer = Buffer.from(content);
 
-      const container = await docker.createContainer({
+      container = await docker.createContainer({
         Image: 'alpine',
         Cmd: ['sh', '-c', `cat > "/workspace/${safeName}"`],
         HostConfig: {
@@ -425,13 +439,78 @@ class VolumeManager {
         throw new Error(`Container exited with code ${result.StatusCode}`);
       }
 
-      await container.remove();
-
       console.log(`✓ Wrote ${filename} for job ${jobId}: ${buffer.length} bytes`);
       return true;
     } catch (error) {
       console.error(`Error writing ${filename} for job ${jobId}:`, error.message);
       return false;
+    } finally {
+      if (container) {
+        await container.stop({ t: 0 }).catch(() => {});
+        await container.remove().catch(() => {});
+      }
+    }
+  }
+
+  /**
+   * Write multiple files to a job's workspace in a single container.
+   * @param {string} jobId - Job ID
+   * @param {Object} files - Map of filename → string|Buffer
+   */
+  async writeWorkspaceFiles(jobId, files) {
+    const volumeName = `${WORKSPACE_PREFIX}${jobId}`;
+    let container;
+
+    try {
+      const pack = tar.pack();
+      const entries = Object.entries(files);
+
+      for (const [filename, content] of entries) {
+        const buffer = Buffer.isBuffer(content) ? content : Buffer.from(content);
+        await new Promise((resolve, reject) => {
+          pack.entry({ name: filename, size: buffer.length }, buffer, err => {
+            if (err) reject(err); else resolve();
+          });
+        });
+      }
+      pack.finalize();
+
+      const chunks = [];
+      for await (const chunk of pack) chunks.push(chunk);
+      const tarBuffer = Buffer.concat(chunks);
+
+      container = await docker.createContainer({
+        Image: 'alpine',
+        Cmd: ['sh', '-c', 'tar -xf - -C /workspace'],
+        HostConfig: { Binds: [`${volumeName}:/workspace`] },
+        OpenStdin: true,
+        StdinOnce: true,
+        AttachStdin: true,
+        AttachStdout: true,
+        AttachStderr: true,
+      });
+
+      const stream = await container.attach({
+        stream: true, stdin: true, stdout: true, stderr: true, hijack: true,
+      });
+
+      await container.start();
+      stream.write(tarBuffer);
+      stream.end();
+
+      const result = await container.wait();
+      if (result.StatusCode !== 0) throw new Error(`Container exited with code ${result.StatusCode}`);
+
+      console.log(`✓ Wrote ${entries.length} files to workspace ${jobId}`);
+      return true;
+    } catch (error) {
+      console.error(`Error writing files to workspace ${jobId}:`, error.message);
+      return false;
+    } finally {
+      if (container) {
+        await container.stop({ t: 0 }).catch(() => {});
+        await container.remove().catch(() => {});
+      }
     }
   }
 
@@ -442,12 +521,12 @@ class VolumeManager {
   async copyCLAUDEmdToWorkspace(jobId) {
     const volumeName = `${WORKSPACE_PREFIX}${jobId}`;
     const claudeMdPath = path.join(__dirname, '../docker/CLAUDE.md');
+    let container;
 
     try {
-      // Read CLAUDE.md from docker directory
       const content = await fs.readFile(claudeMdPath);
 
-      const container = await docker.createContainer({
+      container = await docker.createContainer({
         Image: 'alpine',
         Cmd: ['sh', '-c', 'cat > "/workspace/CLAUDE.md" && chown 1000:1000 /workspace/CLAUDE.md'],
         HostConfig: {
@@ -480,13 +559,16 @@ class VolumeManager {
         throw new Error(`Container exited with code ${result.StatusCode}`);
       }
 
-      await container.remove();
-
       console.log(`✓ Copied CLAUDE.md to workspace ${jobId}: ${content.length} bytes`);
       return true;
     } catch (error) {
       console.error(`Error copying CLAUDE.md to workspace ${jobId}:`, error.message);
       return false;
+    } finally {
+      if (container) {
+        await container.stop({ t: 0 }).catch(() => {});
+        await container.remove().catch(() => {});
+      }
     }
   }
 
@@ -504,6 +586,7 @@ class VolumeManager {
 
     const volumeName = `${WORKSPACE_PREFIX}${jobId}`;
     const skillsSourceDir = path.join(__dirname, '../skills');
+    let container;
 
     try {
       // Create tar archive with selected skills in flat structure
@@ -511,7 +594,12 @@ class VolumeManager {
 
       for (const skillId of skillIds) {
         // Parse skill ID (format: "visibility:skill-name")
-        const [visibility, skillName] = skillId.split(':', 2);
+        const parts = skillId.split(':', 2);
+        if (parts.length < 2 || !parts[1]) {
+          console.warn(`Skipping malformed skill ID (expected "visibility:name"): ${skillId}`);
+          continue;
+        }
+        const [visibility, skillName] = parts;
         const skillSourcePath = path.join(skillsSourceDir, visibility, skillName);
 
         // Check if skill directory exists
@@ -538,7 +626,7 @@ class VolumeManager {
       console.log(`Created skills tarball for job ${jobId}: ${tarBuffer.length} bytes, ${skillIds.length} skills`);
 
       // Create a temporary container to extract the tarball into workspace
-      const container = await docker.createContainer({
+      container = await docker.createContainer({
         Image: 'alpine',
         Cmd: ['sh', '-c', 'mkdir -p /workspace/.claude/skills && cd /workspace/.claude/skills && tar -xf -; chown -R 1000:1000 /workspace/.claude'],
         HostConfig: {
@@ -572,8 +660,6 @@ class VolumeManager {
         throw new Error(`Container exited with code ${result.StatusCode}`);
       }
 
-      await container.remove();
-
       console.log(`✓ Copied ${skillIds.length} skills to workspace ${jobId}`);
       for (const skillId of skillIds) {
         const skillName = skillId.split(':')[1];
@@ -585,6 +671,11 @@ class VolumeManager {
       console.error(`Error copying skills to workspace ${jobId}:`, error.message);
       console.error('Stack:', error.stack);
       return false;
+    } finally {
+      if (container) {
+        await container.stop({ t: 0 }).catch(() => {});
+        await container.remove().catch(() => {});
+      }
     }
   }
 
@@ -670,10 +761,11 @@ class VolumeManager {
    * @returns {Promise<Buffer>} File content as Buffer
    */
   async readFileFromVolume(volumeName, filePath) {
+    let container;
     try {
-      const container = await docker.createContainer({
+      container = await docker.createContainer({
         Image: 'alpine',
-        Cmd: ['sleep', '1'],
+        Cmd: ['tail', '-f', '/dev/null'],
         HostConfig: {
           Binds: [`${volumeName}:/volume:ro`],
         },
@@ -681,39 +773,86 @@ class VolumeManager {
 
       await container.start();
 
-      // Use getArchive to extract file (same as readArtifact)
-      const tarStream = await container.getArchive({
-        path: filePath,
-      });
+      const tarStream = await container.getArchive({ path: filePath });
 
-      // Extract file content from tar stream
       const fileBuffer = await new Promise((resolve, reject) => {
         const extract = tar.extract();
         const chunks = [];
-
         extract.on('entry', (header, stream, next) => {
           stream.on('data', (chunk) => chunks.push(chunk));
           stream.on('end', next);
           stream.resume();
         });
-
-        extract.on('finish', () => {
-          resolve(Buffer.concat(chunks));
-        });
-
+        extract.on('finish', () => resolve(Buffer.concat(chunks)));
         extract.on('error', reject);
-
         tarStream.pipe(extract);
       });
-
-      // Wait for container to finish and remove it
-      await container.wait();
-      await container.remove();
 
       return fileBuffer;
     } catch (error) {
       console.error(`Error reading file ${filePath} from volume ${volumeName}:`, error.message);
       throw error;
+    } finally {
+      if (container) {
+        await container.stop({ t: 0 }).catch(() => {});
+        await container.remove().catch(() => {});
+      }
+    }
+  }
+
+  /**
+   * Read multiple artifact files from a job's workspace in a single container.
+   * @param {string} jobId - Job ID
+   * @param {string[]} relativePaths - Paths relative to /workspace (e.g. 'output/report.md')
+   * @returns {Array<{filePath, buffer}|{filePath, error}>}
+   */
+  async readArtifacts(jobId, relativePaths) {
+    let container;
+    try {
+      container = await docker.createContainer({
+        Image: 'alpine',
+        Cmd: ['tail', '-f', '/dev/null'],
+        HostConfig: {
+          Binds: [`${WORKSPACE_PREFIX}${jobId}:/workspace:ro`],
+        },
+      });
+
+      await container.start();
+
+      const results = await Promise.allSettled(
+        relativePaths.map(async (filePath) => {
+          let tarStream;
+          try {
+            tarStream = await container.getArchive({ path: `/workspace/output/${filePath.split('/').pop()}` });
+          } catch (_) {
+            tarStream = await container.getArchive({ path: `/workspace/${filePath}` });
+          }
+
+          const buffer = await new Promise((resolve, reject) => {
+            const extract = tar.extract();
+            const chunks = [];
+            extract.on('entry', (header, stream, next) => {
+              stream.on('data', chunk => chunks.push(chunk));
+              stream.on('end', next);
+              stream.resume();
+            });
+            extract.on('finish', () => resolve(Buffer.concat(chunks)));
+            extract.on('error', reject);
+            tarStream.pipe(extract);
+          });
+
+          return { filePath, buffer };
+        })
+      );
+
+      return results.map((r, i) =>
+        r.status === 'fulfilled' ? r.value : { filePath: relativePaths[i], error: r.reason }
+      );
+    } finally {
+      if (container) {
+        await container.stop({ t: 0 }).catch(() => {});
+        await container.remove().catch(() => {});
+      }
     }
   }
 
@@ -725,16 +864,38 @@ class VolumeManager {
   async readDatasetContext(datasetId) {
     const contextFiles = ['structure.json', 'semantic.json', 'confidence.json', 'provenance.json'];
     const context = {};
+    let container;
 
     try {
-      // Read all context files in parallel
+      container = await docker.createContainer({
+        Image: 'alpine',
+        Cmd: ['tail', '-f', '/dev/null'],
+        HostConfig: {
+          Binds: [`${DATASETS_VOLUME}:/datasets:ro`],
+        },
+      });
+
+      await container.start();
+
       const results = await Promise.allSettled(
         contextFiles.map(async (filename) => {
-          const filePath = `/volume/${datasetId}/normalized/${filename}`;
           try {
-            const buffer = await this.readFileFromVolume(DATASETS_VOLUME, filePath);
-            const content = JSON.parse(buffer.toString('utf-8'));
-            return { filename, content };
+            const tarStream = await container.getArchive({
+              path: `/datasets/${datasetId}/normalized/${filename}`,
+            });
+            const buffer = await new Promise((resolve, reject) => {
+              const extract = tar.extract();
+              const chunks = [];
+              extract.on('entry', (header, stream, next) => {
+                stream.on('data', chunk => chunks.push(chunk));
+                stream.on('end', next);
+                stream.resume();
+              });
+              extract.on('finish', () => resolve(Buffer.concat(chunks)));
+              extract.on('error', reject);
+              tarStream.pipe(extract);
+            });
+            return { filename, content: JSON.parse(buffer.toString('utf-8')) };
           } catch (error) {
             console.warn(`Could not read ${filename} for dataset ${datasetId}:`, error.message);
             return { filename, content: null };
@@ -742,7 +903,6 @@ class VolumeManager {
         })
       );
 
-      // Collect results
       for (const result of results) {
         if (result.status === 'fulfilled' && result.value.content !== null) {
           const key = result.value.filename.replace('.json', '');
@@ -755,6 +915,11 @@ class VolumeManager {
     } catch (error) {
       console.error(`Error reading dataset context for ${datasetId}:`, error.message);
       throw error;
+    } finally {
+      if (container) {
+        await container.stop({ t: 0 }).catch(() => {});
+        await container.remove().catch(() => {});
+      }
     }
   }
 
