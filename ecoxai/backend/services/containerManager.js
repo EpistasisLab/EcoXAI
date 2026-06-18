@@ -354,7 +354,7 @@ class ContainerManager {
         Image: 'alpine',
         Cmd: ['sh', '-c', `
           if [ -d /workspace/output ]; then find /workspace/output -type f; fi
-          find /workspace -maxdepth 1 -type f \\( -name '*.json' -o -name '*.csv' -o -name '*.txt' -o -name '*.png' -o -name '*.jpg' -o -name '*.md' -o -name '*.html' \\)
+          find /workspace -maxdepth 1 -type f \\( -name '*.json' -o -name '*.csv' -o -name '*.txt' -o -name '*.png' -o -name '*.jpg' -o -name '*.md' -o -name '*.html' -o -name '*.py' \\)
         `],
         HostConfig: { Binds: [`${WORKSPACE_PREFIX}${jobId}:/workspace:ro`], AutoRemove: false },
       });

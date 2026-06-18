@@ -16,6 +16,7 @@ const CONTENT_TYPES = {
   '.txt': 'text/plain',
   '.json': 'application/json',
   '.csv': 'text/csv',
+  '.py': 'text/x-python',
 };
 
 function createJobsRoutes({ state, saveState, broadcast, findJob, updateJob, containerManager }) {

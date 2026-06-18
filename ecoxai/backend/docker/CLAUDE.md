@@ -82,6 +82,13 @@ For large datasets:
 Always generate:
 * `/workspace/output/report.md`
 
+## Python Scripts
+
+For every Python script you write that performs analysis, modeling, or data processing:
+* Save a copy to `/workspace/output/<descriptive_name>.py` (e.g. `cleaning.py`, `model.py`, `analysis.py`)
+* The script must be self-contained and runnable — include all imports at the top and a `if __name__ == '__main__':` guard where applicable
+* Scripts saved here become permanent assets visible in the UI alongside reports and figures
+
 If the task succeeds:
 * Include methodology
 * Include key findings

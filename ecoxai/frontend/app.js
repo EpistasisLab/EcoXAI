@@ -479,17 +479,34 @@ function renderStageDetail(stageId) {
     </div>`;
 }
 
+function groupArtifactNames(artifacts) {
+  const order = ['Markdowns', 'Scripts', 'Images', 'Other'];
+  const groups = { Markdowns: [], Scripts: [], Images: [], Other: [] };
+  for (const a of artifacts) {
+    const name = typeof a === 'string' ? a : (a.name || a.path || 'artifact');
+    const ext = name.includes('.') ? name.split('.').pop().toLowerCase() : '';
+    if (ext === 'md')                                     groups.Markdowns.push(name);
+    else if (['py', 'sh', 'r', 'sql'].includes(ext))     groups.Scripts.push(name);
+    else if (['png','jpg','jpeg','gif','svg'].includes(ext)) groups.Images.push(name);
+    else                                                   groups.Other.push(name);
+  }
+  return order.filter(g => groups[g].length > 0).map(g => ({ label: g, names: groups[g] }));
+}
+
 function buildAssetsPane(job) {
   const artifacts = job.artifacts || [];
   if (artifacts.length === 0) {
     return '<div class="empty-state" style="padding:20px"><div class="icon" style="font-size:24px">📄</div><p>No assets yet.</p></div>';
   }
-  const items = artifacts.map(a => {
-    const name = typeof a === 'string' ? a : (a.name || a.path || 'artifact');
-    const sel = name === state.selectedAssetFile ? ' selected' : '';
-    return `<div class="asset-file${sel}" onclick="app.loadAsset('${escHtml(job.id)}','${escAttr(name)}')">
-      <span class="asset-file-name">${escHtml(name)}</span>
-    </div>`;
+  const grouped = groupArtifactNames(artifacts);
+  const items = grouped.map(({ label, names }) => {
+    const files = names.map(name => {
+      const sel = name === state.selectedAssetFile ? ' selected' : '';
+      return `<div class="asset-file${sel}" onclick="app.loadAsset('${escHtml(job.id)}','${escAttr(name)}')">
+        <span class="asset-file-name">${escHtml(name)}</span>
+      </div>`;
+    }).join('');
+    return `<div class="asset-group-label">${escHtml(label)}</div>${files}`;
   }).join('');
   return `<div class="asset-split">
     <div class="asset-list">${items}</div>
@@ -712,12 +729,15 @@ function buildHypAssetsPane(job) {
   if (!artifacts.length) {
     return '<div class="empty-state" style="padding:20px"><div class="icon" style="font-size:24px">📄</div><p>No assets yet.</p></div>';
   }
-  const items = artifacts.map(a => {
-    const name = typeof a === 'string' ? a : (a.name || a.path || 'artifact');
-    const sel = name === state.hypDetailAsset ? ' selected' : '';
-    return `<div class="asset-file${sel}" onclick="app.loadHypAsset('${escHtml(job.id)}','${escAttr(name)}')">
-      <span class="asset-file-name">${escHtml(name)}</span>
-    </div>`;
+  const grouped = groupArtifactNames(artifacts);
+  const items = grouped.map(({ label, names }) => {
+    const files = names.map(name => {
+      const sel = name === state.hypDetailAsset ? ' selected' : '';
+      return `<div class="asset-file${sel}" onclick="app.loadHypAsset('${escHtml(job.id)}','${escAttr(name)}')">
+        <span class="asset-file-name">${escHtml(name)}</span>
+      </div>`;
+    }).join('');
+    return `<div class="asset-group-label">${escHtml(label)}</div>${files}`;
   }).join('');
   return `<div class="asset-split">
     <div class="asset-list">${items}</div>
@@ -1304,6 +1324,7 @@ window.app = {
     if (!state.stageDraft) state.stageDraft = { skill: [...(stage.skill || [])], prompt: stage.prompt || '' };
     state.stageDraft.skill.splice(idx, 1);
     renderStageDetail(state.selectedStageId);
+    app.saveStageConfig();
   },
 
   addDraftSkill() {
@@ -1322,6 +1343,7 @@ window.app = {
     if (!state.stageDraft.skill.includes(val)) state.stageDraft.skill.push(val);
     if (input) input.value = '';
     renderStageDetail(state.selectedStageId);
+    app.saveStageConfig();
   },
 
   cancelStageEdit() {

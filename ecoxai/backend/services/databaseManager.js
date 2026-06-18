@@ -50,14 +50,6 @@ class DatabaseManager {
         console.log('Migrated hypotheses.alzkb_source → graph_source');
       } catch (_) { /* column already renamed or doesn't exist */ }
 
-      // Drop dead tables (idempotent)
-      this.db.exec('DROP TABLE IF EXISTS workflow_logs');
-      this.db.exec('DROP TABLE IF EXISTS chat_messages');
-      this.db.exec('DROP TABLE IF EXISTS conversations');
-      this.db.exec('DROP TABLE IF EXISTS orchestrator_config');
-      this.db.exec('DROP TABLE IF EXISTS agent_memories');
-      this.db.exec('DROP TABLE IF EXISTS templates');
-
       // Drop dead columns (try/catch — older SQLite lacks IF EXISTS on DROP COLUMN)
       try { this.db.exec('ALTER TABLE jobs DROP COLUMN assignee'); } catch (_) {}
       try { this.db.exec('ALTER TABLE jobs DROP COLUMN recommended_skills'); } catch (_) {}

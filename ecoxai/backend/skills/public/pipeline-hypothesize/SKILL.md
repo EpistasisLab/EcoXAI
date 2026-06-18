@@ -25,13 +25,6 @@ Before generating anything, you must:
 
 Choose the type that most precisely describes each hypothesis:
 
-**Statistical layer**
-- `correlation` — two features co-vary (specify direction + expected magnitude, e.g. Spearman r > 0.4)
-- `distribution_shift` — a feature's distribution differs meaningfully across subgroups
-- `interaction_effect` — two features have a non-linear combined effect on the outcome
-- `threshold_effect` — a feature's effect on outcome is step-wise / non-linear past a value
-- `confounding` — an apparent relationship between X and Y is explained by a third variable Z
-
 **ML/model layer**
 - `feature_importance` — a feature ranks highly in a trained model (specify threshold)
 - `model_performance` — model achieves a target metric (AUC, F1, accuracy, etc.)

@@ -10,7 +10,7 @@
   --text-dim: #d8d8d8;
   --text-on-bg: #1f1410;
   --text-dim-on-bg: #6b5050;
-  --accent: #98a574;
+  --accent: #7e613c;
   --accent2: #ffdcdb;
   --green: #00aa6c;
   --yellow: #fbbf24;
@@ -220,7 +220,8 @@ html, body { height: 100%; font-family: 'Segoe UI', system-ui, sans-serif; backg
 }
 .asset-file:hover, .asset-file.selected { border-color: var(--accent); color: var(--text); }
 .asset-file-name { flex: 1; font-family: monospace; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.asset-file.selected .asset-file-name { color: var(--text); }
+.asset-file.selected .asset-file-name { color: var(--text-dim-on-bg); }
+.asset-group-label { font-size: 9px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-dim-on-bg); padding: 6px 4px 2px; margin-top: 4px; }
 
 .asset-preview-area { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: auto; padding: 8px; }
 .asset-preview {
@@ -506,7 +507,7 @@ html, body { height: 100%; font-family: 'Segoe UI', system-ui, sans-serif; backg
 
 /* ── Skills view ── */
 .skill-group { margin-bottom: 8px; }
-.skill-group-header { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-dim); padding: 4px 8px; }
+.skill-group-header { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-on-bg); padding: 4px 8px; }
 
 /* ── Upload feedback ── */
 .upload-area.uploading { opacity: 0.6; pointer-events: none; cursor: default; }
