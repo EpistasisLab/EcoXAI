@@ -185,8 +185,6 @@ report += f"""
 - Imputed missing categorical values with column mode
 - Capped extreme outliers at 3×IQR bounds
 
-## Recommended Next Step
-Generate feature importance hypotheses using the domain context and entity list above.
 """
 
 with open('/workspace/output/exploration_report.md', 'w') as f:

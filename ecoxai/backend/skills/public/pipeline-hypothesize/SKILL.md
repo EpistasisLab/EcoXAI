@@ -13,11 +13,13 @@ version: 2.0.0
 You are the hypothesis generation phase of a scientific analysis pipeline. Your goal is to generate **diverse, novel, falsifiable** scientific hypotheses about the dataset. Hypotheses are stored directly in the hypothesis database via the backend API — no files are written.
 
 Before generating anything, you must:
-1. Load the dataset and exploration report for full context
-2. **Query existing hypotheses** from the API — do not regenerate what already exists
-3. Reason explicitly about which hypothesis types and features are under-explored
-4. Generate 6–10 hypotheses that maximize scientific coverage
-5. POST them to the API
+1. If there is a research question in the task.txt that the user wants, that is the direction of all hypotheses. Diversity of hypotheses is important, but it should be ALWAYS towards the direction to solve the research question.
+2. View the EDA report (in /workspace/exploration_report.md) for dataset context.
+3. Load the dataset for full context
+4. **Query existing hypotheses** from the API — do not regenerate what already exists
+5. Reason explicitly about which hypothesis types and features are under-explored
+6. Generate 6–10 hypotheses that maximize scientific coverage
+7. POST them to the API
 
 ---
 
@@ -39,9 +41,8 @@ Choose the type that most precisely describes each hypothesis:
 - `subgroup` — a population subgroup exhibits a meaningfully different pattern
 - `causal` — directional claim: X influences Y (stronger than correlation)
 
-**Data quality layer**
-- `informative_missingness` — missing values in a feature are non-random and predictive of the outcome
-- `outlier_signal` — outliers in the data form a meaningful biological subgroup rather than noise
+**Interaction/mechanistic layer**
+- `interaction_effect` — two features jointly predict the outcome better than either alone (testable by engineering the interaction term and checking its model importance)
 
 ---
 
@@ -61,13 +62,6 @@ backend_url = os.environ.get('BACKEND_URL', 'http://host.docker.internal:8081')
 job_id = os.environ.get('JOB_ID', '')
 
 print(f"Domain: {domain}, Job: {job_id}")
-
-# Read exploration report
-try:
-    with open('/workspace/exploration_report.md') as f:
-        exploration_report = f.read()
-except FileNotFoundError:
-    exploration_report = ''
 
 # Load cleaned data
 df = pd.read_csv(f'/datasets/{dataset_id}/cleaned/data.csv')
@@ -108,10 +102,9 @@ print(f"Type coverage: {dict(existing_types)}")
 # Identify under-explored features and types
 uncovered_features = [f for f in non_target_features if f not in existing_features]
 all_types = [
-    'correlation', 'distribution_shift', 'interaction_effect', 'threshold_effect', 'confounding',
     'feature_importance', 'model_performance', 'feature_engineering', 'predictive',
     'biomarker', 'risk_factor', 'protective_factor', 'pathway', 'subgroup', 'causal',
-    'informative_missingness', 'outlier_signal'
+    'interaction_effect',
 ]
 uncovered_types = [t for t in all_types if existing_types.get(t, 0) == 0]
 
@@ -167,11 +160,12 @@ Unused hypothesis types (target these): {uncovered_types}
 
 GENERATION RULES
 ================
-1. Type breadth: include types from AT LEAST 3 different layers (statistical, ML/model,
-   biological/domain, data quality). Strongly prefer unused types.
+1. Type breadth: include types from AT LEAST 3 different layers (ML/model, biological/domain,
+   interaction/mechanistic). Strongly prefer unused types.
 2. Feature breadth: prioritize features NOT in existing_features. Do not repeat a feature
    unless the new hypothesis tests it in a fundamentally different way.
-3. Layer diversity: do not generate more than 3 hypotheses of the same layer.
+3. Layer diversity: do not generate more than 3 hypotheses from the ML/model layer or the
+   biological/domain layer in a single batch.
 4. Semantic novelty: each hypothesis must test a DIFFERENT mechanism or pattern.
    "Feature A importance > 0.1" and "Feature A importance > 0.2" are NOT distinct.
 5. Information gain: prefer hypotheses whose confirmation or rejection would most
@@ -228,6 +222,82 @@ try:
 except Exception as e:
     print(f"ERROR: Failed to store hypotheses: {e}")
     raise
+```
 
+#### 6. Write Interesting Hypotheses to report.md
+
+A hypothesis is **interesting to pursue** if it meets any of the following:
+- `confidence_score >= 0.70`
+- `hypothesis_type` is biological/domain or mechanistic (`biomarker`, `causal`, `pathway`, `interaction_effect`, `risk_factor`, `protective_factor`, `subgroup`)
+- `novelty_rationale` indicates it covers an unexplored feature or type
+
+Select the top hypotheses (up to 5) that are most worth acting on next. Sort by confidence descending within the interesting set.
+
+```python
+import os
+
+INTERESTING_TYPES = {
+    'biomarker', 'causal', 'pathway', 'interaction_effect',
+    'risk_factor', 'protective_factor', 'subgroup'
+}
+CONFIDENCE_THRESHOLD = 0.70
+
+def is_interesting(h):
+    score = h.get('confidence_score') or 0
+    htype = h.get('hypothesis_type', '')
+    return score >= CONFIDENCE_THRESHOLD or htype in INTERESTING_TYPES
+
+interesting = sorted(
+    [h for h in hypotheses if is_interesting(h)],
+    key=lambda h: h.get('confidence_score') or 0,
+    reverse=True
+)[:5]
+
+report_path = '/workspace/output/report.md'
+
+# Build the section
+lines = [
+    '',
+    '---',
+    '',
+    '## Hypotheses Worth Pursuing',
+    '',
+    f'*{len(hypotheses)} hypotheses generated; {len(interesting)} flagged as high-priority.*',
+    '',
+]
+
+if interesting:
+    for i, h in enumerate(interesting, 1):
+        score = h.get('confidence_score')
+        score_str = f'{score:.2f}' if score is not None else 'n/a'
+        feature = h.get('feature_name') or '—'
+        metric = h.get('expected_metric') or '—'
+        rationale = h.get('novelty_rationale') or '—'
+        lines += [
+            f'### {i}. {h["hypothesis_text"]}',
+            '',
+            f'- **Type:** `{h.get("hypothesis_type", "unknown")}`',
+            f'- **Confidence:** {score_str}',
+            f'- **Feature:** {feature}',
+            f'- **Expected metric:** {metric}',
+            f'- **Why interesting:** {rationale}',
+            '',
+        ]
+else:
+    lines.append('*No hypotheses exceeded the interest threshold this run.*')
+    lines.append('')
+
+section = '\n'.join(lines)
+
+# Append to existing report.md, or create it if missing
+os.makedirs('/workspace/output', exist_ok=True)
+if os.path.exists(report_path):
+    with open(report_path, 'a') as f:
+        f.write(section)
+else:
+    with open(report_path, 'w') as f:
+        f.write(f'# Hypothesis Generation Report\n{section}')
+
+print(f"Appended {len(interesting)} high-priority hypotheses to report.md")
 print("SKILL_INVOKED: public:pipeline-hypothesize")
 ```

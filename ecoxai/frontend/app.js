@@ -595,9 +595,10 @@ function renderHypotheses() {
 
   document.getElementById('hyp-count').textContent  = state.hypotheses.length;
   document.getElementById('stat-total').textContent  = state.hypotheses.length;
-  document.getElementById('stat-supported').textContent = state.hypotheses.filter(h => h.status === 'supported').length;
-  document.getElementById('stat-rejected').textContent  = state.hypotheses.filter(h => h.status === 'rejected').length;
-  document.getElementById('stat-pending').textContent   = state.hypotheses.filter(h => !['supported','rejected'].includes(h.status)).length;
+  document.getElementById('stat-supported').textContent    = state.hypotheses.filter(h => h.status === 'supported').length;
+  document.getElementById('stat-rejected').textContent     = state.hypotheses.filter(h => h.status === 'rejected').length;
+  document.getElementById('stat-needs-more-data').textContent = state.hypotheses.filter(h => h.status === 'needs_more_data').length;
+  document.getElementById('stat-pending').textContent      = state.hypotheses.filter(h => !['supported','rejected','needs_more_data'].includes(h.status)).length;
 
   if (state.hypotheses.length === 0) {
     list.innerHTML = '<div class="empty-state"><div class="icon">🔬</div><p>No hypotheses yet.<br>Run the pipeline to generate them.</p></div>';
@@ -1252,6 +1253,13 @@ window.app = {
     updateAutoModeBadge(true);
   },
 
+  toggleSidebar() {
+    const sidebar = document.getElementById('sidebar');
+    const collapsed = sidebar.classList.toggle('collapsed');
+    document.getElementById('sidebar-toggle').title = collapsed ? 'Expand sidebar' : 'Collapse sidebar';
+    try { localStorage.setItem('sidebar-collapsed', collapsed ? '1' : ''); } catch(e) {}
+  },
+
   async togglePipeline() {
     if (state.pipeline.autoMode) {
       await this.pausePipeline();
@@ -1643,6 +1651,13 @@ function formatDate(iso) {
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 async function init() {
+  try {
+    if (localStorage.getItem('sidebar-collapsed')) {
+      document.getElementById('sidebar').classList.add('collapsed');
+      document.getElementById('sidebar-toggle').title = 'Expand sidebar';
+    }
+  } catch(e) {}
+
   applySettingsToForm();
   connectWS();
 

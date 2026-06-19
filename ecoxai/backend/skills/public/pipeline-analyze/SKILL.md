@@ -1,351 +1,696 @@
 ---
 name: pipeline-analyze
-description: Train ML models, test hypotheses against feature importances, discover surprises, and produce the final scientific report — all in one pass
-when: use when running the combined test-and-validate phase after hypotheses have been generated
+description: Evaluate scientific hypotheses using appropriate statistical methods and predictive modeling while preserving standardized verdict outputs
+when: use after hypotheses have been generated and cleaned data is available
 visibility: public
-tags: [pipeline, test, validate, report, ml, feature-importance, sklearn, scientific]
+tags: [pipeline, test, validate, statistics, ml, scientific]
 author: system
-version: 1.0.0
+version: 3.0.0
+--------------
+
+# Instructions
+
+You are the hypothesis testing and validation phase of a scientific analysis pipeline.
+
+Your responsibility is to evaluate each hypothesis using the most appropriate statistical methodology.
+
+Predictive machine learning models may be used as supplementary evidence, but hypothesis verdicts must primarily be derived from effect sizes, uncertainty estimates, statistical significance, and appropriate domain-specific tests.
+
+The output contract must remain unchanged:
+
+| File                        | Description                |
+| --------------------------- | -------------------------- |
+| output/verdict_results.json | Per-hypothesis verdicts    |
+| output/test_results.md      | Tabular hypothesis results |
+| output/report.md            | Full scientific report     |
+
 ---
 
-## Instructions
+# Part 0 — Determine Evaluation Strategy
 
-You are the combined testing and validation phase of a scientific analysis pipeline. Train ML models, measure actual feature importances, score each hypothesis, discover unexpected findings, and produce a final scientific report — in a single pass with full context.
+Before writing code, inspect each hypothesis.
 
-### Required Outputs
+Use the hypothesis_type field to select the primary evaluation method.
 
-| File | Description |
-|---|---|
-| `output/feature_importance_results.json` | Per-feature importance scores (used by the hypothesis tracking system) |
-| `output/test_results.md` | Per-hypothesis verdict table with evidence |
-| `output/report.md` | Comprehensive scientific report with recommendations |
+| hypothesis_type     | Primary Method                          |
+| ------------------- | --------------------------------------- |
+| feature_importance  | Permutation importance                  |
+| predictive          | Cross-validated model + feature ranking |
+| model_performance   | Cross-validated performance metrics     |
+| biomarker           | Single-feature predictive evaluation    |
+| risk_factor         | Logistic regression odds ratio          |
+| protective_factor   | Logistic regression odds ratio          |
+| subgroup            | Subgroup comparison                     |
+| interaction_effect  | Interaction regression                  |
+| pathway             | Gene/pathway aggregation                |
+| causal              | Cannot establish causality              |
+| feature_engineering | Requires manual feature creation        |
+
+Predictive model feature importance should never be treated as proof of a scientific claim.
 
 ---
 
-### Part 1 — Train Models & Compute Feature Importances
-
-#### 1. Load Data and Hypotheses
+# Part 1 — Load Data and Hypotheses
 
 ```python
-import pandas as pd
-import numpy as np
-import json
 import os
+import json
+import re
+import numpy as np
+import pandas as pd
 
-dataset_id = os.environ.get('DATASET_ID', '')
+from scipy import stats
 
-# Load cleaned data from explore phase (promoted to shared datasets volume)
-df = pd.read_csv(f'/datasets/{dataset_id}/cleaned/data.csv')
+results = {}
+verdicts = []
+importance_table = {}
+surprises = []
 
-# Load hypothesis from backend API — match task hypothesis text
+dataset_id = os.environ.get("DATASET_ID", "")
+target_col = os.environ.get("TARGET_COLUMN")
+
+if not target_col:
+    raise ValueError(
+        "TARGET_COLUMN environment variable must be supplied."
+    )
+
+df = pd.read_csv(
+    f"/datasets/{dataset_id}/cleaned/data.csv"
+)
+
+if target_col not in df.columns:
+    raise ValueError(
+        f"Target column '{target_col}' not found."
+    )
+
+backend_url = os.environ.get(
+    "BACKEND_URL",
+    "http://host.docker.internal:8081"
+)
+
+task_content = os.environ.get("TASK", "")
+
 hypotheses = []
-task_content = os.environ.get('TASK', '')
-backend_url = os.environ.get('BACKEND_URL', 'http://host.docker.internal:8081')
 
 try:
     import requests
-    resp = requests.get(f'{backend_url}/api/hypotheses', timeout=10)
-    all_hyps = resp.json().get('hypotheses', [])
-    marker = '**Hypothesis:**'
+
+    resp = requests.get(
+        f"{backend_url}/api/hypotheses",
+        timeout=10
+    )
+
+    all_hypotheses = resp.json().get(
+        "hypotheses",
+        []
+    )
+
+    marker = "**Hypothesis:**"
+
     if marker in task_content:
-        hyp_text = task_content.split(marker, 1)[1].strip().split('\n')[0].strip()
-        hypotheses = [h for h in all_hyps if h.get('hypothesis_text', '').strip() == hyp_text]
+        hyp_text = (
+            task_content
+            .split(marker, 1)[1]
+            .strip()
+            .split("\n")[0]
+            .strip()
+        )
+
+        hypotheses = [
+            h for h in all_hypotheses
+            if h.get(
+                "hypothesis_text",
+                ""
+            ).strip() == hyp_text
+        ]
+
     if not hypotheses:
-        hypotheses = all_hyps
+        hypotheses = all_hypotheses
+
 except Exception as e:
-    print(f"Could not load hypotheses from API: {e}")
+    print(
+        f"Unable to load hypotheses: {e}"
+    )
 
-print(f"Loaded {df.shape[0]} rows × {df.shape[1]} columns, {len(hypotheses)} hypotheses")
-```
-
-#### 2. Identify Features and Target
-
-```python
-# Infer target column
-target_candidates = [c for c in df.columns
-                     if any(kw in c.lower() for kw in ['target', 'label', 'outcome', 'diagnosis', 'class', 'y'])]
-target_col = target_candidates[0] if target_candidates else df.columns[-1]
-
-# Feature columns: all numeric except target
-feature_cols = [c for c in df.select_dtypes(include=[np.number]).columns if c != target_col]
-
-X = df[feature_cols].fillna(0)
-y = df[target_col]
-
-from sklearn.preprocessing import LabelEncoder
-if y.dtype == 'object':
-    le = LabelEncoder()
-    y = le.fit_transform(y)
-
-print(f"Target: {target_col} ({len(np.unique(y))} classes), Features: {len(feature_cols)}")
-```
-
-#### 3. Train Models
-
-```python
-from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
-from sklearn.model_selection import cross_val_score, StratifiedKFold
-
-cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
-results = {}
-
-# Random Forest
-rf = RandomForestClassifier(n_estimators=200, max_depth=10, random_state=42, n_jobs=-1)
-rf_scores = cross_val_score(rf, X, y, cv=cv, scoring='roc_auc')
-rf.fit(X, y)
-results['RandomForest'] = {
-    'importances': dict(zip(feature_cols, rf.feature_importances_.tolist())),
-    'auc_mean': float(rf_scores.mean()),
-    'auc_std': float(rf_scores.std())
-}
-print(f"RandomForest AUC: {rf_scores.mean():.3f} ± {rf_scores.std():.3f}")
-
-# Gradient Boosting
-try:
-    gb = GradientBoostingClassifier(n_estimators=100, max_depth=4, random_state=42)
-    gb_scores = cross_val_score(gb, X, y, cv=cv, scoring='roc_auc')
-    gb.fit(X, y)
-    results['GradientBoosting'] = {
-        'importances': dict(zip(feature_cols, gb.feature_importances_.tolist())),
-        'auc_mean': float(gb_scores.mean()),
-        'auc_std': float(gb_scores.std())
-    }
-    print(f"GradientBoosting AUC: {gb_scores.mean():.3f} ± {gb_scores.std():.3f}")
-except Exception as e:
-    print(f"GradientBoosting failed: {e}")
-```
-
-#### 4. Aggregate Feature Importances
-
-```python
-all_models = list(results.keys())
-importance_table = {}
-
-for feat in feature_cols:
-    scores = [results[m]['importances'].get(feat, 0.0) for m in all_models]
-    importance_table[feat] = {
-        'mean_importance': float(np.mean(scores)),
-        'max_importance': float(np.max(scores)),
-        'by_model': {m: results[m]['importances'].get(feat, 0.0) for m in all_models}
-    }
-
-sorted_features = sorted(importance_table.items(), key=lambda x: x[1]['mean_importance'], reverse=True)
-top_features = sorted_features[:20]
-
-print("\nTop 10 features:")
-for feat, scores in top_features[:10]:
-    print(f"  {feat}: {scores['mean_importance']:.4f}")
+print(
+    f"Loaded {len(df)} rows and {len(hypotheses)} hypotheses"
+)
 ```
 
 ---
 
-### Part 2 — Score Hypotheses, Discover Surprises, Write Report
-
-#### 5. Score Each Hypothesis
+# Part 2 — Dataset Profiling
 
 ```python
-verdicts = []
-supported = []
-rejected = []
-needs_more_data = []
+dataset_summary = {
+    "rows": len(df),
+    "columns": len(df.columns),
+    "missing_values":
+        int(df.isna().sum().sum()),
+    "target_column":
+        target_col
+}
 
-for h in hypotheses:
-    feat = h.get('feature_name', '')
-    expected = h.get('expected_importance', 0.0)
-    actual = importance_table.get(feat, {}).get('mean_importance', 0.0)
-    source = h.get('alzkb_source', '')
+y = df[target_col]
 
-    if actual >= expected:
-        verdict = 'supported'
-    elif actual >= expected * 0.5:
-        verdict = 'needs_more_data'
-    else:
-        verdict = 'rejected'
+numeric_cols = (
+    df.select_dtypes(
+        include=[np.number]
+    )
+    .columns
+    .tolist()
+)
 
-    record = {
-        **h,
-        'actual_importance': round(actual, 4),
-        'delta': round(actual - expected, 4),
-        'pct_of_expected': round(actual / expected, 2) if expected > 0 else None,
-        'verdict': verdict,
+feature_cols = [
+    c for c in numeric_cols
+    if c != target_col
+]
+
+X = (
+    df[feature_cols]
+    .fillna(0)
+)
+
+if y.dtype == object:
+    from sklearn.preprocessing import LabelEncoder
+
+    le = LabelEncoder()
+
+    y = le.fit_transform(y)
+
+print(dataset_summary)
+```
+
+---
+
+# Part 3 — Predictive Model Evidence
+
+Predictive models provide supporting evidence only.
+
+```python
+from sklearn.model_selection import (
+    RepeatedStratifiedKFold,
+    cross_val_score,
+    train_test_split
+)
+
+from sklearn.metrics import roc_auc_score
+
+from sklearn.inspection import (
+    permutation_importance
+)
+
+from xgboost import XGBClassifier
+
+X_train, X_test, y_train, y_test = (
+    train_test_split(
+        X,
+        y,
+        test_size=0.2,
+        stratify=y,
+        random_state=42
+    )
+)
+
+cv = RepeatedStratifiedKFold(
+    n_splits=5,
+    n_repeats=3,
+    random_state=42
+)
+
+predictive_evidence = {}
+
+try:
+
+    xgb = XGBClassifier(
+        n_estimators=300,
+        max_depth=6,
+        learning_rate=0.05,
+        random_state=42,
+        eval_metric="logloss",
+        n_jobs=-1
+    )
+
+    cv_scores = cross_val_score(
+        xgb,
+        X,
+        y,
+        cv=cv,
+        scoring="roc_auc"
+    )
+
+    xgb.fit(
+        X_train,
+        y_train
+    )
+
+    test_auc = roc_auc_score(
+        y_test,
+        xgb.predict_proba(X_test)[:,1]
+    )
+
+    perm = permutation_importance(
+        xgb,
+        X_test,
+        y_test,
+        n_repeats=20,
+        random_state=42
+    )
+
+    predictive_evidence = {
+        "cv_auc_mean":
+            float(np.mean(cv_scores)),
+        "cv_auc_std":
+            float(np.std(cv_scores)),
+        "test_auc":
+            float(test_auc)
     }
-    verdicts.append(record)
-    if verdict == 'supported':
-        supported.append(record)
-    elif verdict == 'needs_more_data':
-        needs_more_data.append(record)
-    else:
-        rejected.append(record)
 
-    print(f"  [{verdict.upper()}] {feat}: expected {expected:.3f}, actual {actual:.4f}")
+    for feature, score in zip(
+        feature_cols,
+        perm.importances_mean
+    ):
+        importance_table[feature] = {
+            "mean_importance":
+                float(score)
+        }
 
-print(f"\nSupported: {len(supported)}, Needs more data: {len(needs_more_data)}, Rejected: {len(rejected)}")
-```
-
-#### 6. Discover Surprising Features
-
-```python
-hypothesized_features = {h.get('feature_name') for h in hypotheses}
-surprise_threshold = 0.05
-
-surprises = [
-    {'feature': feat, 'importance': scores['mean_importance']}
-    for feat, scores in sorted_features
-    if feat not in hypothesized_features and scores['mean_importance'] >= surprise_threshold
-]
-surprises.sort(key=lambda x: x['importance'], reverse=True)
-
-if surprises:
-    print(f"Unexpected high-importance features: {[s['feature'] for s in surprises[:5]]}")
-```
-
-#### 7. Generate Recommendations
-
-```python
-recommendations = []
-
-if supported:
-    top_feat = sorted(supported, key=lambda x: x['actual_importance'], reverse=True)[0]['feature_name']
-    recommendations.append(
-        f"Build on confirmed feature `{top_feat}` — explore interaction terms with other top features"
-    )
-
-if rejected:
-    top_rej = sorted(rejected, key=lambda x: x['expected_importance'], reverse=True)[0]['feature_name']
-    recommendations.append(
-        f"Revisit rejected hypothesis for `{top_rej}` — consider alternative encodings or pathway aggregations"
-    )
-
-if surprises:
-    recommendations.append(
-        f"Investigate unexpected high-importance feature `{surprises[0]['feature']}` — hypothesize mechanism next iteration"
-    )
-
-if needs_more_data:
-    recommendations.append(
-        f"Re-test `{needs_more_data[0]['feature_name']}` with larger sample or different model — partial signal detected"
+except Exception as e:
+    print(
+        f"Predictive model failed: {e}"
     )
 ```
 
-#### 8. Save All Outputs
+---
+
+# Part 4 — Statistical Testing Engine
+
+Required imports:
 
 ```python
-os.makedirs('/workspace/output', exist_ok=True)
+from statsmodels.stats.multitest import multipletests
+import statsmodels.api as sm
 
-# feature_importance_results.json (consumed by hypothesis tracking system — do not rename)
-importance_output = [
-    {'feature': feat, 'importance': scores['mean_importance'], 'model': 'ensemble_mean'}
-    for feat, scores in sorted_features
-]
-with open('/workspace/output/feature_importance_results.json', 'w') as f:
-    json.dump(importance_output, f, indent=2)
+all_p_values = []
+pvalue_index = {}
+```
 
-# verdict_results.json — direct hypothesis_id → verdict mapping (primary channel for status updates)
-verdict_output = [
-    {
-        'hypothesis_id': v.get('hypothesis_id', ''),
-        'verdict': v['verdict'],
-        'actual_importance': v['actual_importance'],
-        'reasoning': (
-            f"Actual importance ({v['actual_importance']:.4f}) vs "
-            f"expected ({v.get('expected_importance') or 0:.3f}): {v['verdict']}"
+For every hypothesis:
+
+---
+
+## Risk Factor / Protective Factor
+
+```python
+X_feat = sm.add_constant(
+    X[[feature]]
+)
+
+model = sm.Logit(
+    y,
+    X_feat
+).fit(disp=0)
+
+coef = model.params[feature]
+
+p = model.pvalues[feature]
+
+ci = model.conf_int().loc[feature]
+
+or_value = np.exp(coef)
+
+ci_lower = np.exp(ci[0])
+
+ci_upper = np.exp(ci[1])
+```
+
+Evidence:
+
+```text
+OR
+95% CI
+p-value
+```
+
+Verdict:
+
+Supported if:
+
+* risk_factor:
+  OR > 1 and p < 0.05
+
+* protective_factor:
+  OR < 1 and p < 0.05
+
+---
+
+## Biomarker
+
+Train logistic regression using only the biomarker.
+
+Use:
+
+```python
+RepeatedStratifiedKFold
+```
+
+Compute:
+
+```python
+mean_auc
+95% confidence interval
+```
+
+Supported when:
+
+```python
+lower_ci > threshold
+```
+
+---
+
+## Model Performance
+
+Evaluate:
+
+```python
+cross validated AUC
+```
+
+Compute:
+
+```python
+mean_auc
+std_auc
+95% CI
+```
+
+Supported if:
+
+```python
+lower_ci > expected_threshold
+```
+
+---
+
+## Predictive
+
+Use:
+
+```python
+permutation_importance
+```
+
+Evaluate:
+
+```python
+feature rank
+importance distribution
+```
+
+Supported when feature remains consistently important across folds.
+
+---
+
+## Feature Importance
+
+Use:
+
+```python
+permutation_importance
+```
+
+Never use:
+
+```python
+xgb.feature_importances_
+```
+
+Supported when:
+
+```python
+importance > 0
+and
+confidence interval excludes zero
+```
+
+---
+
+## Interaction Effect
+
+Fit:
+
+```python
+y ~ A + B + A*B
+```
+
+Evaluate:
+
+```python
+interaction coefficient
+confidence interval
+p-value
+```
+
+Supported if:
+
+```python
+p < 0.05
+```
+
+---
+
+## Subgroup
+
+Require:
+
+```json
+{
+  "subgroup_column":"...",
+  "subgroup_value":"..."
+}
+```
+
+Compare:
+
+```python
+overall effect
+subgroup effect
+```
+
+Supported when subgroup effect differs significantly.
+
+---
+
+## Pathway
+
+If pathway definitions unavailable:
+
+```python
+verdict = "needs_more_data"
+```
+
+Otherwise:
+
+```python
+aggregate pathway importance
+or
+enrichment statistics
+```
+
+---
+
+## Causal
+
+Always:
+
+```python
+verdict = "needs_more_data"
+```
+
+Reasoning:
+
+```text
+Observational predictive modeling cannot establish causality.
+```
+
+---
+
+## Feature Engineering
+
+Always:
+
+```python
+verdict = "needs_more_data"
+```
+
+Reasoning:
+
+```text
+Requires new feature construction.
+```
+
+---
+
+# Part 5 — Multiple Testing Correction
+
+After collecting all hypothesis p-values:
+
+```python
+adjusted = multipletests(
+    all_p_values,
+    method="fdr_bh"
+)[1]
+```
+
+Attach:
+
+```python
+adjusted_p
+```
+
+to each hypothesis.
+
+Final verdicts must use adjusted p-values whenever available.
+
+---
+
+# Part 6 — Discover Surprising Features
+
+```python
+surprise_threshold = 0.01
+
+hypothesized = {
+    h.get("feature_name")
+    for h in hypotheses
+    if h.get("feature_name")
+}
+
+surprises = []
+
+for feature, vals in importance_table.items():
+
+    score = vals["mean_importance"]
+
+    if (
+        feature not in hypothesized
+        and score >= surprise_threshold
+    ):
+        surprises.append(
+            {
+                "feature": feature,
+                "importance": score
+            }
         )
-    }
-    for v in verdicts
-    if v.get('hypothesis_id')
-]
-with open('/workspace/output/verdict_results.json', 'w') as f:
-    json.dump(verdict_output, f, indent=2)
 
-# test_results.md
-test_report = f"""# Hypothesis Test Results
-
-## Model Performance
-
-| Model | AUC (mean ± std) |
-|---|---|
-"""
-for model_name, model_data in results.items():
-    test_report += f"| {model_name} | {model_data['auc_mean']:.3f} ± {model_data['auc_std']:.3f} |\n"
-
-test_report += f"""
-## Hypothesis Verdicts
-
-| Feature | Expected | Actual | Verdict |
-|---|---|---|---|
-"""
-for v in verdicts:
-    test_report += f"| `{v['feature_name']}` | {v['expected_importance']:.3f} | {v['actual_importance']:.4f} | **{v['verdict']}** |\n"
-
-test_report += f"""
-## Top 20 Features by Importance
-
-| Rank | Feature | Mean Importance |
-|---|---|---|
-"""
-for i, (feat, scores) in enumerate(top_features[:20], 1):
-    test_report += f"| {i} | `{feat}` | {scores['mean_importance']:.4f} |\n"
-
-with open('/workspace/output/test_results.md', 'w') as f:
-    f.write(test_report)
-
-# report.md — full scientific report
-report = f"""# Scientific Analysis Report
-
-## Executive Summary
-
-- **Hypotheses tested:** {len(hypotheses)}
-- **Supported:** {len(supported)} ({100*len(supported)//max(len(hypotheses),1)}%)
-- **Rejected:** {len(rejected)} ({100*len(rejected)//max(len(hypotheses),1)}%)
-- **Needs more data:** {len(needs_more_data)} ({100*len(needs_more_data)//max(len(hypotheses),1)}%)
-
-## Model Performance
-
-| Model | AUC (mean ± std) |
-|---|---|
-"""
-for model_name, model_data in results.items():
-    report += f"| {model_name} | {model_data['auc_mean']:.3f} ± {model_data['auc_std']:.3f} |\n"
-
-if supported:
-    report += "\n## Supported Hypotheses\n\n"
-    report += "| Feature | Expected | Actual | Source |\n|---|---|---|---|\n"
-    for h in sorted(supported, key=lambda x: x['actual_importance'], reverse=True):
-        src = h.get('alzkb_source', '—')[:60]
-        report += f"| `{h['feature_name']}` | {h['expected_importance']:.3f} | {h['actual_importance']:.4f} | {src} |\n"
-
-if needs_more_data:
-    report += "\n## Inconclusive — Needs More Data\n\n"
-    report += "| Feature | Expected | Actual | % of Expected |\n|---|---|---|---|\n"
-    for h in needs_more_data:
-        pct = f"{h['pct_of_expected']*100:.0f}%" if h.get('pct_of_expected') else "—"
-        report += f"| `{h['feature_name']}` | {h['expected_importance']:.3f} | {h['actual_importance']:.4f} | {pct} |\n"
-
-if rejected:
-    report += "\n## Rejected Hypotheses\n\n"
-    report += "| Feature | Expected | Actual | Reasoning |\n|---|---|---|---|\n"
-    for h in rejected:
-        report += f"| `{h['feature_name']}` | {h['expected_importance']:.3f} | {h['actual_importance']:.4f} | Actual importance far below threshold |\n"
-
-top15 = sorted(importance_output, key=lambda x: x['importance'], reverse=True)[:15]
-report += "\n## Top 15 Features Discovered\n\n"
-report += "| Rank | Feature | Importance |\n|---|---|---|\n"
-for i, feat in enumerate(top15, 1):
-    report += f"| {i} | `{feat['feature']}` | {feat['importance']:.4f} |\n"
-
-if surprises:
-    report += "\n## Unexpected High-Importance Features\n\n"
-    report += "These features were not hypothesized but showed significant importance:\n\n"
-    for s in surprises[:5]:
-        report += f"- `{s['feature']}`: importance = {s['importance']:.4f} — investigate mechanism\n"
-
-report += "\n## Recommendations for Next Iteration\n\n"
-for i, rec in enumerate(recommendations, 1):
-    report += f"{i}. {rec}\n"
-
-with open('/workspace/output/report.md', 'w') as f:
-    f.write(report)
-
-print("Saved: feature_importance_results.json, verdict_results.json, test_results.md, report.md")
-print("SKILL_INVOKED: public:pipeline-analyze")
+surprises.sort(
+    key=lambda x: x["importance"],
+    reverse=True
+)
 ```
+
+---
+
+# Part 7 — Verdict Construction
+
+Keep schema unchanged.
+
+```python
+record = {
+    "hypothesis_id":
+        h.get("hypothesis_id",""),
+
+    "verdict":
+        verdict,
+
+    "actual_importance":
+        observed_value,
+
+    "reasoning":
+        reasoning
+}
+```
+
+Allowed verdicts:
+
+```text
+supported
+rejected
+needs_more_data
+```
+
+Guidelines:
+
+supported:
+statistically significant
+effect present
+
+rejected:
+statistically significant null result
+
+needs_more_data:
+insufficient power
+unavailable metadata
+causal claim
+feature engineering claim
+wide confidence interval
+
+---
+
+# Part 8 — Recommendations
+
+Generate recommendations from:
+
+1. strongest supported findings
+2. inconclusive findings
+3. unexpected features
+4. model limitations
+
+Recommendations should cite:
+
+* effect size
+* confidence interval
+* uncertainty
+
+not just feature importance.
+
+---
+
+# Part 9 — Save Outputs
+
+The output contract remains unchanged.
+
+## verdict_results.json
+
+```json
+[
+  {
+    "hypothesis_id":"123",
+    "verdict":"supported",
+    "actual_importance":0.14,
+    "reasoning":"OR=1.82, 95%CI=[1.32,2.51], adjusted p=0.002"
+  }
+]
+```
+
+## test_results.md
+
+Include:
+
+| Hypothesis | Type | Effect Size | 95% CI | p-value | FDR | Verdict |
+
+## report.md
+
+Include:
+
+* dataset summary
+* model performance
+* supported hypotheses
+* rejected hypotheses
+* inconclusive hypotheses
+* surprise discoveries
+* recommendations
+
+Always report uncertainty measures alongside effect estimates.
+
+Never claim causality from predictive modeling.

@@ -14,21 +14,24 @@
 
   <!-- ── SIDEBAR ── -->
   <nav id="sidebar">
-    <div class="sidebar-title">EcoXAI</div>
-    <div class="nav-item active" data-view="datasets">
-      <span class="nav-icon">📂</span>Datasets
+    <div class="sidebar-title">
+      <span class="sidebar-title-text">EcoXAI</span>
+      <button class="sidebar-collapse-btn" id="sidebar-toggle" title="Collapse sidebar" onclick="app.toggleSidebar()">&#8249;</button>
     </div>
-    <div class="nav-item" data-view="pipeline">
-      <span class="nav-icon">⚡</span>Pipeline
+    <div class="nav-item active" data-view="datasets" title="Datasets">
+      <span class="nav-icon">📂</span><span class="nav-label">Datasets</span>
     </div>
-    <div class="nav-item" data-view="hypotheses">
-      <span class="nav-icon">🔬</span>Hypotheses
+    <div class="nav-item" data-view="pipeline" title="Pipeline">
+      <span class="nav-icon">⚡</span><span class="nav-label">Pipeline</span>
     </div>
-    <div class="nav-item" data-view="skills">
-      <span class="nav-icon">🛠</span>Skills
+    <div class="nav-item" data-view="hypotheses" title="Hypotheses">
+      <span class="nav-icon">🔬</span><span class="nav-label">Hypotheses</span>
     </div>
-    <div class="nav-item" data-view="settings">
-      <span class="nav-icon">⚙️</span>Settings
+    <div class="nav-item" data-view="skills" title="Skills">
+      <span class="nav-icon">🛠</span><span class="nav-label">Skills</span>
+    </div>
+    <div class="nav-item" data-view="settings" title="Settings">
+      <span class="nav-icon">⚙️</span><span class="nav-label">Settings</span>
     </div>
   </nav>
 
@@ -105,6 +108,7 @@
           <div class="stat"><div class="val" id="stat-total">0</div><div class="lbl">Total</div></div>
           <div class="stat"><div class="val green" id="stat-supported">0</div><div class="lbl">Supported</div></div>
           <div class="stat"><div class="val red" id="stat-rejected">0</div><div class="lbl">Rejected</div></div>
+          <div class="stat"><div class="val orange" id="stat-needs-more-data">0</div><div class="lbl">Needs Data</div></div>
           <div class="stat"><div class="val yellow" id="stat-pending">0</div><div class="lbl">Pending</div></div>
         </div>
         <div class="vault-toolbar">

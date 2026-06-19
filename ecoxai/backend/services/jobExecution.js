@@ -83,7 +83,7 @@ async function startJobExecution(deps, jobId, options = {}) {
         const artifactsForState = result.artifacts.map(({ buffer, ...rest }) => rest);
 
         updateJob(jobId, {
-          status: (result.exitCode === 0 || result.artifacts.length > 0) ? 'completed' : 'failed',
+          status: result.exitCode === 0 ? 'completed' : 'failed',
           exitCode: result.exitCode,
           artifacts: artifactsForState,
           skillsInvoked: result.skillsInvoked || [],

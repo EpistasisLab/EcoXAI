@@ -99,12 +99,11 @@ class Orchestrator extends EventEmitter {
     // When a job completes → check if it was a pipeline stage
     this.on('job_completed', async ({ jobId, exitCode, datasetId, stageId, artifacts }) => {
       if (!stageId) return;
-      const hasArtifacts = Array.isArray(artifacts) && artifacts.length > 0;
-      const succeeded = exitCode === 0 || hasArtifacts;
+      const succeeded = exitCode === 0;
 
       if (!succeeded) {
         this._updateActiveStage(datasetId, 'failed', jobId);
-        console.warn(`[Orchestrator] Stage ${stageId} failed (exit ${exitCode}, no artifacts) for dataset ${datasetId}`);
+        console.warn(`[Orchestrator] Stage ${stageId} failed (exit ${exitCode}) for dataset ${datasetId}`);
 
         const job = (this.deps.state.jobs || []).find(j => j.id === jobId);
         const hypothesisId = job?._hypothesisId ?? null;
@@ -137,9 +136,6 @@ class Orchestrator extends EventEmitter {
       this.stageRetryAttempts.delete(retryKey);
 
       this._broadcastStageUpdate(stageId, this._getStageName(stageId), 'completed', jobId, datasetId);
-      if (exitCode !== 0) {
-        console.warn(`[Orchestrator] Stage ${stageId} exited ${exitCode} but produced ${artifacts.length} artifact(s) — treating as completed`);
-      }
 
       // Feed test results back to hypothesis statuses and advance per-hypothesis queue
       if (stageId === 'analyze') {

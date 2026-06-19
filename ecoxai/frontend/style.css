@@ -36,6 +36,8 @@ html, body { height: 100%; font-family: 'Segoe UI', system-ui, sans-serif; backg
   flex-direction: column;
   padding: 12px 0 0;
   overflow-y: auto;
+  overflow-x: hidden;
+  transition: width 0.2s ease;
 }
 
 .sidebar-title {
@@ -44,10 +46,35 @@ html, body { height: 100%; font-family: 'Segoe UI', system-ui, sans-serif; backg
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--accent2);
-  padding: 4px 16px 16px;
+  padding: 4px 8px 16px 16px;
   border-bottom: 1px solid var(--border);
   margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
 }
+
+.sidebar-collapse-btn {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+  padding: 0 2px;
+  border-radius: 3px;
+  transition: color 0.15s, transform 0.2s;
+  flex-shrink: 0;
+}
+.sidebar-collapse-btn:hover { color: var(--text); }
+
+#sidebar.collapsed { width: 48px; }
+#sidebar.collapsed .sidebar-title-text { display: none; }
+#sidebar.collapsed .sidebar-collapse-btn { transform: rotate(180deg); }
+#sidebar.collapsed .nav-label { display: none; }
+#sidebar.collapsed .nav-item { justify-content: center; padding: 9px 0; }
+#sidebar.collapsed .nav-icon { width: auto; }
 
 .nav-item {
   display: flex;
@@ -244,7 +271,7 @@ html, body { height: 100%; font-family: 'Segoe UI', system-ui, sans-serif; backg
 
 /* Stage list */
 .stage-list { display: flex; flex-direction: column; gap: 6px; }
-.stage-item { display: flex; flex-direction: column; background: var(--bg3); border-radius: 6px; border-left: 3px solid var(--border); overflow: hidden; cursor: pointer; transition: border-left-color 0.15s, background 0.15s; }
+.stage-item { margin-bottom: 10px; display: flex; flex-direction: column; background: var(--bg3); border-radius: 6px; border-left: 3px solid var(--border); overflow: hidden; cursor: pointer; transition: border-left-color 0.15s, background 0.15s; }
 .stage-item:hover { background: #2a2b31; }
 .stage-item.running { border-left-color: var(--yellow); background: #2d2b28; }
 .stage-item.completed { border-left-color: var(--green); }
@@ -394,6 +421,7 @@ html, body { height: 100%; font-family: 'Segoe UI', system-ui, sans-serif; backg
 .stat .val.green { color: var(--green); }
 .stat .val.red { color: var(--red); }
 .stat .val.yellow { color: var(--yellow); }
+.stat .val.orange { color: #f28e2b; }
 
 /* ── Hypothesis split layout ── */
 #hyp-detail { display: flex; flex-direction: column; flex: 1; min-height: 0; }

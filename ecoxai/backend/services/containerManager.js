@@ -60,7 +60,7 @@ function formatClaudeOutput(json) {
         logData = { type: 'completion', duration_ms: json.duration_ms, total_cost_usd: json.total_cost_usd, num_turns: json.num_turns, result: json.result };
       } else if (subtype === 'error') {
         displayText = `\n❌ Error: ${json.error_message || 'Unknown error'}\n`;
-        logData = { type: 'error', error_message: json.error_message };
+        logData = { type: 'error', error_message: json.error_message, total_cost_usd: json.total_cost_usd };
       }
       break;
   }
@@ -109,7 +109,10 @@ class ExecutionLogBuffer {
   }
 
   addCompletion(data) { this.completionData = data; }
-  addError(message) { this.errorMessage = message; }
+  addError(message, costUsd) {
+    this.errorMessage = message;
+    if (costUsd != null) this.completionData = { total_cost_usd: costUsd };
+  }
 
   async flush() {
     try {
@@ -272,7 +275,7 @@ class ContainerManager {
                   case 'assistant_message': logBuffer.addAssistantMessage(logData, timestamp); break;
                   case 'tool_results': logBuffer.addToolResults(logData.results, timestamp); break;
                   case 'completion': logBuffer.addCompletion(logData); break;
-                  case 'error': logBuffer.addError(logData.error_message); break;
+                  case 'error': logBuffer.addError(logData.error_message, logData.total_cost_usd); break;
                 }
               } catch (logError) {
                 console.warn(`[${id}] Log error:`, logError.message);
@@ -306,7 +309,7 @@ class ContainerManager {
             completed_at: completedAt,
             duration_ms: durationMs,
             exit_code: result.StatusCode,
-            status: (result.StatusCode === 0 || artifacts.length > 0) ? 'completed' : 'failed',
+            status: result.StatusCode === 0 ? 'completed' : 'failed',
             total_cost_usd: logBuffer.completionData?.total_cost_usd || null,
             num_turns: logBuffer.completionData?.num_turns || logBuffer.currentTurn,
             artifacts_json: JSON.stringify(artifacts),

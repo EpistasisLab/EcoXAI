@@ -105,7 +105,7 @@ On failure:
 
 ### 1. Task Summary
 
-Brief description of the objective.
+Brief description of the objective and conclusion.
 
 ### 2. Dataset Information
 
