@@ -811,6 +811,7 @@ function renderHypDetail() {
   let extraDetails = '';
   if (hyp.evaluation_reasoning) extraDetails += `<div class="hyp-detail-row"><strong>Reasoning:</strong> <span>${escHtml(hyp.evaluation_reasoning)}</span></div>`;
   if (hyp.expected_metric) extraDetails += `<div class="hyp-detail-row"><strong>Expected metric:</strong> <span>${escHtml(hyp.expected_metric)}</span></div>`;
+  if (hyp.conclusion_text && ['supported', 'rejected', 'needs_more_data'].includes(hyp.status)) extraDetails += `<div class="hyp-detail-row"><strong>Conclusion:</strong> <span>${escHtml(hyp.conclusion_text)}</span></div>`;
   if (hyp.graph_source) extraDetails += `<div class="hyp-detail-row"><strong>Source:</strong> <span>${escHtml(hyp.graph_source)}</span></div>`;
 
   let jobSectionHtml;

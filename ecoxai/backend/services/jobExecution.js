@@ -136,8 +136,7 @@ async function startJobExecution(deps, jobId, options = {}) {
           const datasetMeta = state.datasets[datasetId];
 
           const reportArtifact = findArtifactByName(result.artifacts, 'report.md')
-            || findArtifactByName(result.artifacts, 'exploration_report.md')
-            || findArtifactByName(result.artifacts, 'test_results.md');
+            || findArtifactByName(result.artifacts, 'exploration_report.md');
           const reportContent = reportArtifact?.content || null;
 
           let featureData = null;

@@ -12,6 +12,33 @@ const fs = require('fs');
 const path = require('path');
 const { evaluateHypothesisFromReport } = require('./services/jobPostCompletion');
 
+function extractConclusionFromReport(reportContent) {
+  const targetHeadings = ['conclusion', 'summary', 'findings', 'results'];
+  const lines = reportContent.split('\n');
+  let inSection = false;
+  const collected = [];
+
+  for (const line of lines) {
+    const headingMatch = line.match(/^#{1,3}\s+(.+)/);
+    if (headingMatch) {
+      const title = headingMatch[1].toLowerCase().trim();
+      inSection = targetHeadings.some(h => title.includes(h));
+      continue;
+    }
+    if (inSection) {
+      const trimmed = line.trim();
+      if (trimmed && !trimmed.startsWith('|') && !trimmed.startsWith('```')) {
+        collected.push(trimmed);
+        if (collected.join(' ').length > 400) break;
+      }
+    }
+  }
+
+  const text = collected.join(' ').trim();
+  if (!text) return null;
+  return text.length > 500 ? text.substring(0, 497) + '...' : text;
+}
+
 // ═══════════════════════════════════════════════════════
 //  PIPELINE CONFIGURATION — Edit this to change behavior
 // ═══════════════════════════════════════════════════════
@@ -639,6 +666,7 @@ class Orchestrator extends EventEmitter {
                 status: verdict.status,
                 evaluation_reasoning: verdict.reasoning,
               });
+              resolvedIds.add(hypothesisId);
               broadcast({ type: 'DATABASE_UPDATE', entity: 'hypotheses' });
               console.log(`[Orchestrator] Hypothesis ${hypothesisId} → ${verdict.status} via report.md`);
             }
@@ -646,6 +674,27 @@ class Orchestrator extends EventEmitter {
         }
       } catch (err) {
         console.warn('[Orchestrator] _processTestResults (report-based) error:', err.message);
+      }
+    }
+
+    // Extract conclusion text from report.md and store on all resolved hypotheses
+    if (resolvedIds.size > 0) {
+      try {
+        const reportArtifact = (artifacts || []).find(a => {
+          const name = typeof a === 'string' ? a : (a.name || a.path || '');
+          return (name.includes('/') ? name.split('/').pop() : name) === 'report.md';
+        });
+        if (reportArtifact?.content) {
+          const conclusion = extractConclusionFromReport(reportArtifact.content);
+          if (conclusion) {
+            for (const id of resolvedIds) {
+              await dbManager.updateHypothesis(id, { conclusion_text: conclusion });
+            }
+            broadcast({ type: 'DATABASE_UPDATE', entity: 'hypotheses' });
+          }
+        }
+      } catch (err) {
+        console.warn('[Orchestrator] _processTestResults (conclusion extraction) error:', err.message);
       }
     }
   }

@@ -58,6 +58,7 @@ class DatabaseManager {
       try { this.db.exec('ALTER TABLE hypotheses DROP COLUMN requested_evidence_type'); } catch (_) {}
       try { this.db.exec('ALTER TABLE hypotheses DROP COLUMN requested_agent_action'); } catch (_) {}
       try { this.db.exec('ALTER TABLE hypotheses DROP COLUMN parent_hypothesis_id'); } catch (_) {}
+      try { this.db.exec('ALTER TABLE hypotheses ADD COLUMN conclusion_text TEXT'); } catch (_) {}
       try { this.db.exec('ALTER TABLE agent_runs DROP COLUMN sandbox_id'); } catch (_) {}
       try { this.db.exec('ALTER TABLE agent_runs DROP COLUMN permission_mode'); } catch (_) {}
 
@@ -261,7 +262,7 @@ class DatabaseManager {
   async updateHypothesis(hypothesisId, updates) {
     const allowedFields = [
       'status', 'confidence_score', 'evaluation_reasoning', 'priority',
-      'actual_importance', 'feature_name'
+      'actual_importance', 'feature_name', 'conclusion_text'
     ];
 
     const fields = [];

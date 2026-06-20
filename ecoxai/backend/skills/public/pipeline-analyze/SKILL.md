@@ -21,7 +21,6 @@ The output contract must remain unchanged:
 | File                        | Description                |
 | --------------------------- | -------------------------- |
 | output/verdict_results.json | Per-hypothesis verdicts    |
-| output/test_results.md      | Tabular hypothesis results |
 | output/report.md            | Full scientific report     |
 
 ---
@@ -673,24 +672,14 @@ The output contract remains unchanged.
 ]
 ```
 
-## test_results.md
-
-Include:
-
-| Hypothesis | Type | Effect Size | 95% CI | p-value | FDR | Verdict |
-
 ## report.md
 
 Include:
 
-* dataset summary
-* model performance
-* supported hypotheses
-* rejected hypotheses
-* inconclusive hypotheses
-* surprise discoveries
+* hypothesis summary
+* hypothesis verdict
+* reasoning
+* surprising features
 * recommendations
 
-Always report uncertainty measures alongside effect estimates.
-
-Never claim causality from predictive modeling.
+Never claim causality from predictive modeling. Use the knowledge graph to support your findings.
