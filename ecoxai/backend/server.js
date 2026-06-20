@@ -74,17 +74,17 @@ function loadState() {
         loaded.jobs = loaded.jobs.map(j => ({ ...j, selectedSkills: j.selectedSkills || [], skillsInvoked: j.skillsInvoked || [] }));
       }
       loaded.budget = loaded.budget || { totalCostUsd: 0, jobCount: 0 };
-      loaded.settings = loaded.settings || { budgetLimitUsd: 10, maxParallelJobs: 3, maxHypothesisCycles: 2, containerRamMb: 2048 };
+      loaded.settings = loaded.settings || { budgetLimitUsd: 10, maxParallelJobs: 3, maxHypothesisCycles: 2, containerRamMb: 12288 };
       if (loaded.settings.maxParallelJobs === undefined) loaded.settings.maxParallelJobs = 3;
       if (loaded.settings.maxHypothesisCycles === undefined) loaded.settings.maxHypothesisCycles = 2;
-      if (loaded.settings.containerRamMb === undefined) loaded.settings.containerRamMb = 2048;
+      if (loaded.settings.containerRamMb === undefined) loaded.settings.containerRamMb = 12288;
       console.log(`Loaded state: ${loaded.jobs?.length || 0} jobs, ${Object.keys(loaded.datasets || {}).length} datasets`);
       return loaded;
     }
   } catch (error) {
     console.error('Failed to load state:', error.message);
   }
-  return { jobs: [], datasets: {}, budget: { totalCostUsd: 0, jobCount: 0 }, settings: { budgetLimitUsd: 10, maxParallelJobs: 3, maxHypothesisCycles: 2, containerRamMb: 2048 } };
+  return { jobs: [], datasets: {}, budget: { totalCostUsd: 0, jobCount: 0 }, settings: { budgetLimitUsd: 10, maxParallelJobs: 3, maxHypothesisCycles: 2, containerRamMb: 12288 } };
 }
 
 let state = loadState();
@@ -287,7 +287,7 @@ app.get('/api/settings', (req, res) => {
 });
 
 app.put('/api/settings', (req, res) => {
-  if (!state.settings) state.settings = { budgetLimitUsd: 10, maxParallelJobs: 3, maxHypothesisCycles: 2, containerRamMb: 2048 };
+  if (!state.settings) state.settings = { budgetLimitUsd: 10, maxParallelJobs: 3, maxHypothesisCycles: 2, containerRamMb: 12288 };
   const { budgetLimitUsd, maxParallelJobs, maxHypothesisCycles, containerRamMb } = req.body;
   if (budgetLimitUsd !== undefined) {
     const limit = parseFloat(budgetLimitUsd);
