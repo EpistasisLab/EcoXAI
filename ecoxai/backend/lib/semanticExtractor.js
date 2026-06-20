@@ -139,6 +139,18 @@ async function prepareSampleData(structure, contentResult) {
   const MAX_TABLE_SAMPLE_CHARS = 4000;
   for (const artifact of contentResult.artifacts.filter(a => a.type === 'table')) {
     try {
+      // Feather files are binary — build sample from column metadata instead
+      if (artifact.format === 'feather') {
+        const meta = JSON.parse(require('fs').readFileSync(artifact.metadata_path, 'utf8'));
+        const colList = meta.columns.slice(0, 50).map(c => `${c.name} (${c.type})`).join(', ');
+        samples.push({
+          artifact_id: artifact.id,
+          type: 'table',
+          sample: `Feather table: ${meta.row_count} rows × ${meta.column_count} columns\nColumns: ${colList}${meta.column_count > 50 ? ` ... (+${meta.column_count - 50} more)` : ''}`
+        });
+        continue;
+      }
+
       const content = await fs.readFile(artifact.path, 'utf8');
       const lines = content.split('\n').slice(0, 6); // Header + 5 rows
       let sample = lines.join('\n');

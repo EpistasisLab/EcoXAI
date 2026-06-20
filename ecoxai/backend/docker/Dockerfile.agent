@@ -47,6 +47,7 @@ RUN npm install -g @anthropic-ai/claude-code
 RUN pip install --no-cache-dir \
     pandas \
     numpy \
+    pyarrow \
     scikit-learn \
     matplotlib \
     seaborn \

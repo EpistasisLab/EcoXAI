@@ -41,13 +41,15 @@ with open(f'{base}/semantic.json') as f:
 entities = semantic.get('entities', [])
 units = semantic.get('units', {})
 
-# Discover all table CSVs (table_1.csv, table_2.csv, ...)
-table_files = sorted(glob.glob(f'{base}/tables/table_*.csv'))
+# Discover all table feather files (table_1.feather, table_2.feather, ...)
+import pyarrow.feather as feather
+
+table_files = sorted(glob.glob(f'{base}/tables/table_*.feather'))
 if not table_files:
-    raise FileNotFoundError(f"No table CSVs found in {base}/tables/")
+    raise FileNotFoundError(f"No table feather files found in {base}/tables/")
 
 # Load all tables
-tables = {os.path.basename(f).replace('.csv', ''): pd.read_csv(f) for f in table_files}
+tables = {os.path.basename(f).replace('.feather', ''): feather.read_table(f).to_pandas() for f in table_files}
 df = tables[list(tables.keys())[0]]   # primary table for cleaning/profiling
 print(f"Found {len(tables)} table(s): {list(tables.keys())}")
 print(f"Primary table: {df.shape[0]} rows × {df.shape[1]} columns")

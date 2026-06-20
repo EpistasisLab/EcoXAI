@@ -466,30 +466,9 @@ async function canonicalizeFeatherFile(rawPath, tablesDir) {
       });
     });
 
-    // Convert to CSV
-    const csvLines = [];
-
-    // Header
-    csvLines.push(schema.fields.map(f => f.name).join(','));
-
-    // Rows
-    for (let i = 0; i < numRows; i++) {
-      const row = schema.fields.map(field => {
-        const column = table.getChild(field.name);
-        const value = column.get(i);
-        // Handle nulls and escape commas
-        if (value === null || value === undefined) return '';
-        const str = String(value);
-        return str.includes(',') ? `"${str}"` : str;
-      });
-      csvLines.push(row.join(','));
-    }
-
-    const csvContent = csvLines.join('\n');
-
-    // Write CSV file
-    const csvPath = path.join(tablesDir, 'table_1.csv');
-    await fs.writeFile(csvPath, csvContent, 'utf8');
+    // Copy feather file directly — no CSV conversion
+    const featherPath = path.join(tablesDir, 'table_1.feather');
+    await fs.copyFile(rawPath, featherPath);
 
     // Write table metadata
     const metadataPath = path.join(tablesDir, 'table_1_meta.json');
@@ -498,6 +477,7 @@ async function canonicalizeFeatherFile(rawPath, tablesDir) {
       source_format: 'feather',
       columns,
       row_count: numRows,
+      column_count: columns.length,
       arrow_schema: schema.fields.map(f => ({
         name: f.name,
         type: f.type.toString(),
@@ -506,18 +486,18 @@ async function canonicalizeFeatherFile(rawPath, tablesDir) {
     };
     await fs.writeFile(metadataPath, JSON.stringify(metadata, null, 2), 'utf8');
 
-    // Generate markdown representation
+    // Generate markdown representation (column list only)
     const mdPath = path.join(tablesDir, 'table_1.md');
-    const mdContent = generateFeatherTableMarkdown('table_1', columns, csvLines.slice(0, 6)); // First 5 rows
+    const mdContent = generateFeatherTableMarkdown('table_1', columns, numRows);
     await fs.writeFile(mdPath, mdContent, 'utf8');
 
     return [{
       id: 'table_1',
       type: 'table',
-      path: csvPath,
+      path: featherPath,
       metadata_path: metadataPath,
       markdown_path: mdPath,
-      format: 'csv',
+      format: 'feather',
       row_count: numRows,
       column_count: columns.length
     }];
@@ -534,69 +514,32 @@ async function canonicalizeFeatherFile(rawPath, tablesDir) {
 async function canonicalizeFeatherWithPython(rawPath, tablesDir) {
   const { spawn } = require('child_process');
 
+  const featherPath = path.join(tablesDir, 'table_1.feather');
+
   return new Promise((resolve, reject) => {
+    // Python only reads schema metadata — Node copies the file
     const pythonScript = `
-import sys
-import json
+import sys, json
 import pyarrow.feather as feather
-import pandas as pd
+
+raw_path = sys.argv[1]
 
 try:
-    # Read the Feather file
-    df = feather.read_feather('${rawPath}')
-
-    # Extract metadata
-    columns = []
-    for col_name in df.columns:
-        dtype = str(df[col_name].dtype)
-        nullable = df[col_name].isna().any()
-
-        # Map pandas dtypes to simple types
-        if dtype.startswith('int'):
-            simple_type = 'int64'
-        elif dtype.startswith('float'):
-            simple_type = 'float64'
-        elif dtype == 'bool':
-            simple_type = 'boolean'
-        else:
-            simple_type = 'string'
-
-        columns.append({
-            'name': col_name,
-            'type': simple_type,
-            'nullable': bool(nullable),
-            'pandas_dtype': dtype
-        })
-
-    # Convert to CSV
-    csv_content = df.to_csv(index=False)
-
-    # Return metadata and CSV
-    result = {
-        'columns': columns,
-        'row_count': len(df),
-        'column_count': len(df.columns),
-        'csv_content': csv_content
-    }
-
-    print(json.dumps(result))
+    t = feather.read_table(raw_path)
+    columns = [{'name': f.name, 'type': str(f.type), 'nullable': f.nullable} for f in t.schema]
+    print(json.dumps({'columns': columns, 'row_count': t.num_rows, 'column_count': t.num_columns}))
 
 except Exception as e:
     print(json.dumps({'error': str(e)}), file=sys.stderr)
     sys.exit(1)
 `;
 
-    const python = spawn('python3', ['-c', pythonScript]);
+    const python = spawn('python', ['-c', pythonScript, rawPath]);
     let stdout = '';
     let stderr = '';
 
-    python.stdout.on('data', (data) => {
-      stdout += data.toString();
-    });
-
-    python.stderr.on('data', (data) => {
-      stderr += data.toString();
-    });
+    python.stdout.on('data', (data) => { stdout += data.toString(); });
+    python.stderr.on('data', (data) => { stderr += data.toString(); });
 
     python.on('close', async (code) => {
       if (code !== 0) {
@@ -607,9 +550,8 @@ except Exception as e:
       try {
         const result = JSON.parse(stdout);
 
-        // Write CSV file
-        const csvPath = path.join(tablesDir, 'table_1.csv');
-        await fs.writeFile(csvPath, result.csv_content, 'utf8');
+        // Copy feather file — no CSV conversion needed
+        await fs.copyFile(rawPath, featherPath);
 
         // Write metadata
         const metadataPath = path.join(tablesDir, 'table_1_meta.json');
@@ -617,23 +559,23 @@ except Exception as e:
           id: 'table_1',
           source_format: 'feather',
           columns: result.columns,
-          row_count: result.row_count
+          row_count: result.row_count,
+          column_count: result.column_count
         };
         await fs.writeFile(metadataPath, JSON.stringify(metadata, null, 2), 'utf8');
 
-        // Generate markdown
-        const csvLines = result.csv_content.split('\n').slice(0, 6); // First 5 rows + header
+        // Generate markdown (column list only)
         const mdPath = path.join(tablesDir, 'table_1.md');
-        const mdContent = generateFeatherTableMarkdown('table_1', result.columns, csvLines);
+        const mdContent = generateFeatherTableMarkdown('table_1', result.columns, result.row_count);
         await fs.writeFile(mdPath, mdContent, 'utf8');
 
         resolve([{
           id: 'table_1',
           type: 'table',
-          path: csvPath,
+          path: featherPath,
           metadata_path: metadataPath,
           markdown_path: mdPath,
-          format: 'csv',
+          format: 'feather',
           row_count: result.row_count,
           column_count: result.column_count
         }]);
@@ -679,25 +621,27 @@ function inferColumnType(values) {
 }
 
 /**
- * Generate markdown representation of a table for Feather files
+ * Generate markdown representation of a Feather table (column list only)
  */
-function generateFeatherTableMarkdown(tableName, columns, sampleRows) {
+function generateFeatherTableMarkdown(tableName, columns, rowCount) {
   const lines = [];
+  const MAX_COLS = 50;
 
   lines.push(`# ${tableName}`);
   lines.push('');
-  lines.push(`**Columns:** ${columns.length}`);
-  lines.push(`**Rows:** ${sampleRows.length - 1} (sample)`);
+  lines.push(`**Format:** Feather  **Rows:** ${rowCount}  **Columns:** ${columns.length}`);
   lines.push('');
+  lines.push('| Column | Type | Nullable |');
+  lines.push('|---|---|---|');
 
-  // Table header
-  lines.push('| ' + columns.map(c => c.name).join(' | ') + ' |');
-  lines.push('| ' + columns.map(() => '---').join(' | ') + ' |');
-
-  // Sample rows
-  sampleRows.slice(1).forEach(row => {
-    lines.push('| ' + row.split(',').join(' | ') + ' |');
+  columns.slice(0, MAX_COLS).forEach(c => {
+    lines.push(`| ${c.name} | ${c.type || c.arrow_type || ''} | ${c.nullable} |`);
   });
+
+  if (columns.length > MAX_COLS) {
+    lines.push('');
+    lines.push(`_Showing ${MAX_COLS} of ${columns.length} columns_`);
+  }
 
   return lines.join('\n');
 }

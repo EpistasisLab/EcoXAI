@@ -323,6 +323,10 @@ function renderPipeline() {
         }).join('')}
       </div>`;
 
+    const detailHtml = ss?.detail
+      ? `<div class="stage-detail">${escHtml(ss.detail)}</div>`
+      : '';
+
     return `
       <div class="stage-item ${status}${selectedStage}" id="stage-${stage.id}" onclick="app.selectStage('${stage.id}')">
         <div class="stage-header">
@@ -331,6 +335,7 @@ function renderPipeline() {
           <span class="stage-status">${status}</span>
           ${ss?.datasetId && status !== 'completed' ? `<button class="btn" style="padding:2px 8px;font-size:10px;margin-left:auto" onclick="event.stopPropagation();app.triggerStage('${stage.id}','${ss.datasetId}')">Run</button>` : ''}
         </div>
+        ${detailHtml}
         ${skillPillsHtml}
         ${jobsHtml}
       </div>`;
@@ -338,8 +343,8 @@ function renderPipeline() {
 }
 
 function updateStageDisplay(msg) {
-  const { stageId, stageName, status, jobId, datasetId } = msg;
-  stageStatuses[stageId] = { status, jobId, datasetId };
+  const { stageId, stageName, status, jobId, datasetId, detail } = msg;
+  stageStatuses[stageId] = { status, jobId, datasetId, detail: status === 'running' ? detail : null };
   renderPipeline();
   if (status === 'running' && jobId && state.activeView === 'pipeline') {
     app.selectJob(jobId);

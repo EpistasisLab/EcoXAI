@@ -119,94 +119,35 @@ class VolumeManager {
   /**
    * Copy normalized dataset directory structure to volume
    * Creates: /datasets/{datasetId}/raw/ and /datasets/{datasetId}/normalized/
+   * Uses a bind-mount + cp approach to avoid tar-stream's 2 GiB per-file size limit.
    * @param {string} datasetId - Dataset ID
    * @param {string} normalizedPath - Path to normalized directory structure
    */
   async copyNormalizedDatasetToVolume(datasetId, normalizedPath) {
     let container;
     try {
-      // Build tar archive using tar-stream (cross-platform, no shell needed)
-      const pack = tar.pack();
-      const chunks = [];
-      const packFinished = new Promise((resolve, reject) => {
-        pack.on('data', chunk => chunks.push(chunk));
-        pack.on('end', resolve);
-        pack.on('error', reject);
-      });
+      // Convert Windows backslashes to forward slashes for Docker bind mount
+      const dockerSourcePath = normalizedPath.replace(/\\/g, '/');
 
-      const addToTar = async (dirPath, baseInTar) => {
-        const entries = await fs.readdir(dirPath, { withFileTypes: true });
-        for (const entry of entries) {
-          const fullPath = path.join(dirPath, entry.name);
-          const tarEntryName = baseInTar ? `${baseInTar}/${entry.name}` : entry.name;
-          if (entry.isDirectory()) {
-            await new Promise((resolve, reject) => {
-              pack.entry({ name: tarEntryName, type: 'directory' }, err => {
-                if (err) reject(err); else resolve();
-              });
-            });
-            await addToTar(fullPath, tarEntryName);
-          } else {
-            const content = await fs.readFile(fullPath);
-            await new Promise((resolve, reject) => {
-              pack.entry({ name: tarEntryName, size: content.length }, content, err => {
-                if (err) reject(err); else resolve();
-              });
-            });
-          }
-        }
-      };
-
-      await addToTar(normalizedPath, '');
-      pack.finalize();
-      await packFinished;
-      const tarBuffer = Buffer.concat(chunks);
-
-      // Copy tar to volume and extract
       container = await docker.createContainer({
         Image: 'alpine',
-        Cmd: ['sh', '-c', `mkdir -p /datasets/${datasetId} && tar -xf - -C /datasets/${datasetId}`],
+        Cmd: ['sh', '-c', `mkdir -p /datasets/${datasetId} && cp -r /source/. /datasets/${datasetId}/`],
         HostConfig: {
-          Binds: [`${DATASETS_VOLUME}:/datasets`],
+          Binds: [
+            `${DATASETS_VOLUME}:/datasets`,
+            `${dockerSourcePath}:/source:ro`,
+          ],
         },
-        OpenStdin: true,
-        StdinOnce: true,
-        AttachStdin: true,
-        AttachStdout: true,
-        AttachStderr: true,
       });
 
-      // Attach BEFORE starting — capture stdout/stderr for diagnostics
-      const stream = await container.attach({
-        stream: true,
-        stdin: true,
-        stdout: true,
-        stderr: true,
-        hijack: true,
-      });
-
-      let stderrOutput = '';
-      docker.modem.demuxStream(stream, process.stdout, { write: (chunk) => { stderrOutput += chunk.toString(); } });
-
-      // Start container
       await container.start();
-
-      // Write tar data to stdin, waiting for flush before closing
-      await new Promise((resolve, reject) => {
-        stream.write(tarBuffer, (err) => {
-          if (err) return reject(err);
-          stream.end(resolve);
-        });
-      });
-
-      // Wait for completion
       const result = await container.wait();
 
       if (result.StatusCode !== 0) {
-        throw new Error(`Container exited with code ${result.StatusCode}${stderrOutput ? ': ' + stderrOutput.trim() : ''}`);
+        throw new Error(`Container exited with code ${result.StatusCode}`);
       }
 
-      console.log(`✓ Copied normalized dataset ${datasetId} to volume (${tarBuffer.length} bytes)`);
+      console.log(`✓ Copied normalized dataset ${datasetId} to volume`);
 
       return {
         success: true,

@@ -287,6 +287,7 @@ html, body { height: 100%; font-family: 'Segoe UI', system-ui, sans-serif; backg
 .stage-item.running .stage-status { color: var(--yellow); }
 .stage-item.completed .stage-status { color: var(--green); }
 .stage-item.failed .stage-status { color: var(--red); }
+.stage-detail { padding: 0 12px 6px 40px; font-size: 11px; color: var(--yellow); font-family: monospace; opacity: 0.85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .stage-skills { padding: 0 12px 6px 40px; display: flex; gap: 4px; flex-wrap: wrap; }
 .stage-skill-pill { font-size: 10px; padding: 1px 6px; background: rgba(99,102,241,0.12); color: var(--accent2); border-radius: 3px; font-family: monospace; white-space: nowrap; }
 .stage-jobs { border-top: 1px solid var(--border); display: flex; flex-direction: column; }

@@ -127,6 +127,7 @@ function parseJSON(text) {
 }
 
 async function parseFeather(buffer) {
+  // First try the pure-JS path (works for uncompressed feather)
   try {
     const table = arrow.tableFromIPC(buffer);
     const rows = [];
@@ -136,9 +137,45 @@ async function parseFeather(buffer) {
       rows.push(row);
     }
     return rows;
-  } catch (error) {
-    throw new Error(`Failed to parse Feather file: ${error.message}`);
+  } catch (jsErr) {
+    // Fall back to Python/pyarrow for compressed feather files
+    if (!jsErr.message.includes('codec')) throw new Error(`Failed to parse Feather file: ${jsErr.message}`);
+    return parseFeatherViaPython(buffer);
   }
+}
+
+async function parseFeatherViaPython(buffer) {
+  const { execFile } = require('child_process');
+  const os = require('os');
+  const tmpFeather = path.join(os.tmpdir(), `ecoxai_feather_${Date.now()}.feather`);
+  fs.writeFileSync(tmpFeather, buffer);
+  return new Promise((resolve, reject) => {
+    // Only extract shape metadata (num_rows + column names) — avoids deserializing all values
+    const script = `
+import sys, json
+try:
+    import pyarrow.feather as feather
+    t = feather.read_table(sys.argv[1])
+    print(json.dumps({"num_rows": t.num_rows, "columns": t.schema.names}))
+except ImportError:
+    print(json.dumps({"__error__": "pyarrow not installed"}))
+`;
+    execFile('python', ['-c', script, tmpFeather], { maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
+      try { fs.unlinkSync(tmpFeather); } catch (_) {}
+      if (err) return reject(new Error(`Failed to parse Feather file via Python: ${err.message}\n${stderr}`));
+      let meta;
+      try { meta = JSON.parse(stdout.trim()); } catch (e) {
+        return reject(new Error(`Failed to parse Feather file: unexpected Python output — ${e.message}`));
+      }
+      if (meta.__error__) return reject(new Error(`Failed to parse Feather file: ${meta.__error__}`));
+      // Build a lightweight stub: one header row with null values, length = num_rows
+      // Callers only need parsedData.length and Object.keys(parsedData[0])
+      const headerRow = {};
+      meta.columns.forEach(c => { headerRow[c] = null; });
+      const stub = new Array(meta.num_rows).fill(headerRow);
+      resolve(stub);
+    });
+  });
 }
 
 function parseWorkbook(buffer) {

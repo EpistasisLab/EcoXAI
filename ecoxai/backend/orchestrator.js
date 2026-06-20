@@ -381,7 +381,9 @@ class Orchestrator extends EventEmitter {
 
     try {
       const buffer = fs.readFileSync(pendingFilePath);
-      const normResult = await normalizationService.normalizeDataset(datasetId, dataset.filename, buffer);
+      const normResult = await normalizationService.normalizeDataset(datasetId, dataset.filename, buffer, ({ stage, total, name, detail }) => {
+        this._broadcastStageUpdate('normalize', 'Normalize Dataset', 'running', null, datasetId, `[${stage}/${total}] ${name}${detail ? ': ' + detail : ''}`);
+      });
       if (!normResult.success) {
         console.error(`[Orchestrator] Normalization failed for ${datasetId}:`, normResult.error);
         this._broadcastStageUpdate('normalize', 'Normalize Dataset', 'failed', null, datasetId);
@@ -726,7 +728,7 @@ class Orchestrator extends EventEmitter {
     }
   }
 
-  _broadcastStageUpdate(stageId, stageName, status, jobId, datasetId) {
+  _broadcastStageUpdate(stageId, stageName, status, jobId, datasetId, detail) {
     if (this.deps?.broadcast) {
       this.deps.broadcast({
         type: 'PIPELINE_STAGE_UPDATE',
@@ -735,6 +737,7 @@ class Orchestrator extends EventEmitter {
         status,
         jobId: jobId || null,
         datasetId: datasetId || null,
+        detail: detail || null,
         autoMode: this.autoMode
       });
     }

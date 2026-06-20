@@ -51,8 +51,12 @@ class NormalizationService {
    * @param {Buffer} buffer - Raw file contents
    * @returns {Promise<Object>} Normalization result
    */
-  async normalizeDataset(datasetId, filename, buffer) {
+  async normalizeDataset(datasetId, filename, buffer, onProgress) {
     const startTime = Date.now();
+    const progress = (stage, name, detail) => {
+      console.log(`[Normalization] Stage ${stage}/5: ${name}${detail ? ' — ' + detail : ''}`);
+      if (onProgress) onProgress({ stage, total: 5, name, detail });
+    };
 
     try {
       // Create temporary working directory for this dataset
@@ -70,9 +74,10 @@ class NormalizationService {
       await fs.mkdir(docsDir, { recursive: true });
       await fs.mkdir(tablesDir, { recursive: true });
 
-      console.log(`[Normalization] Starting pipeline for ${datasetId} (${filename})`);
+      console.log(`[Normalization] Starting pipeline for ${datasetId} (${filename}, ${(buffer.length / 1024).toFixed(1)} KB)`);
 
       // Stage 0: Raw Ingestion
+      progress(0, 'Raw Ingestion', `archiving ${filename} (${(buffer.length / 1024).toFixed(1)} KB)`);
       const rawResult = await this.stageRawIngestion(
         datasetId,
         filename,
@@ -81,6 +86,7 @@ class NormalizationService {
       );
 
       // Stage 1: Structural Decomposition
+      progress(1, 'Structural Decomposition', 'classifying document type and sections');
       const structureResult = await this.stageStructuralDecomposition(
         datasetId,
         rawResult.rawPath,
@@ -88,6 +94,7 @@ class NormalizationService {
       );
 
       // Stage 2: Content Normalization
+      progress(2, 'Content Normalization', `converting to canonical formats (type: ${structureResult.document_type})`);
       const contentResult = await this.stageContentNormalization(
         datasetId,
         rawResult.rawPath,
@@ -98,6 +105,7 @@ class NormalizationService {
       );
 
       // Stage 3: Semantic Normalization
+      progress(3, 'Semantic Normalization', `extracting domain metadata (${contentResult.artifacts.length} artifacts)`);
       const semanticResult = await this.stageSemanticNormalization(
         datasetId,
         structureResult,
@@ -105,6 +113,7 @@ class NormalizationService {
       );
 
       // Stage 4: Confidence Scoring
+      progress(4, 'Confidence Scoring', `domain: ${semanticResult.domain || 'unknown'}, entities: ${semanticResult.entities.length}`);
       const confidenceResult = await this.stageConfidenceScoring(
         datasetId,
         structureResult,
@@ -113,6 +122,7 @@ class NormalizationService {
       );
 
       // Stage 5: Provenance Tracking
+      progress(5, 'Provenance Tracking', `confidence: ${confidenceResult.overall.toFixed(2)}, exclusions: ${confidenceResult.exclusions.length}`);
       const provenanceResult = await this.stageProvenanceTracking(
         datasetId,
         filename,
