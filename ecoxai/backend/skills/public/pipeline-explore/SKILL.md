@@ -16,7 +16,7 @@ You are the exploration phase of a scientific analysis pipeline. Your job is to 
 
 | File | Description |
 |---|---|
-| `output/cleaned_data.csv` | Cleaned, analysis-ready data table |
+| `output/cleaned_data.feather` | Cleaned, analysis-ready data table |
 | `output/exploration_report.md` | Findings, quality issues, column descriptions |
 
 ### Steps
@@ -128,7 +128,8 @@ import os
 os.makedirs('/workspace/output', exist_ok=True)
 
 # Save cleaned data
-df_clean.to_csv('/workspace/output/cleaned_data.csv', index=False)
+import pyarrow.feather as feather
+feather.write_feather(df_clean, '/workspace/output/cleaned_data.feather')
 
 # Write exploration report
 report = f"""# Exploration Report
@@ -192,6 +193,6 @@ report += f"""
 with open('/workspace/output/exploration_report.md', 'w') as f:
     f.write(report)
 
-print("Saved: output/cleaned_data.csv, output/exploration_report.md")
+print("Saved: output/cleaned_data.feather, output/exploration_report.md")
 print("SKILL_INVOKED: public:pipeline-explore")
 ```

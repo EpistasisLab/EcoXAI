@@ -73,8 +73,9 @@ if not target_col:
         "TARGET_COLUMN environment variable must be supplied."
     )
 
-df = pd.read_csv(
-    f"/datasets/{dataset_id}/cleaned/data.csv"
+import pyarrow.feather as feather
+df = feather.read_feather(
+    f"/datasets/{dataset_id}/cleaned/data.feather"
 )
 
 if target_col not in df.columns:

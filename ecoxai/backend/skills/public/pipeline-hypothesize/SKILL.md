@@ -64,7 +64,7 @@ job_id = os.environ.get('JOB_ID', '')
 print(f"Domain: {domain}, Job: {job_id}")
 
 # Load cleaned data
-df = pd.read_csv(f'/datasets/{dataset_id}/cleaned/data.csv')
+df = pd.read_csv(f'/datasets/{dataset_id}/cleaned/data.feather')
 feature_cols = df.columns.tolist()
 
 # Infer target column

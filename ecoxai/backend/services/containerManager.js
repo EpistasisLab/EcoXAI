@@ -356,13 +356,14 @@ class ContainerManager {
   }
 
   async _getArtifacts(jobId, stageId) {
+    const MAX_TEXT_BYTES = 50 * 1024 * 1024; // 50 MB — guard against V8 string length limit
     const artifacts = [];
     try {
       const checkContainer = await docker.createContainer({
         Image: 'alpine',
         Cmd: ['sh', '-c', `
           if [ -d /workspace/output ]; then find /workspace/output -type f; fi
-          find /workspace -maxdepth 1 -type f \\( -name '*.json' -o -name '*.csv' -o -name '*.txt' -o -name '*.png' -o -name '*.jpg' -o -name '*.md' -o -name '*.html' -o -name '*.py' \\)
+          find /workspace -maxdepth 1 -type f \\( -name '*.json' -o -name '*.csv' -o -name '*.feather' -o -name '*.txt' -o -name '*.png' -o -name '*.jpg' -o -name '*.md' -o -name '*.html' -o -name '*.py' \\)
         `],
         HostConfig: { Binds: [`${WORKSPACE_PREFIX}${jobId}:/workspace:ro`], AutoRemove: false },
       });
@@ -383,7 +384,8 @@ class ContainerManager {
           offset += 8 + size;
         }
       } else {
-        output = logStream.toString();
+        const raw = logStream.toString();
+        output = raw.length > MAX_TEXT_BYTES ? raw.slice(0, MAX_TEXT_BYTES) : raw;
       }
 
       await checkContainer.remove().catch(() => {});
@@ -414,7 +416,7 @@ class ContainerManager {
           const result = readResults[i];
 
           if (result.buffer) {
-            if (isBinary) {
+            if (isBinary || result.buffer.length > MAX_TEXT_BYTES) {
               artifacts.push({ name: filename, path: filePath.replace('/workspace/', ''), jobId, buffer: result.buffer });
             } else {
               artifacts.push({ name: filename, path: filePath.replace('/workspace/', ''), jobId, content: result.buffer.toString('utf-8') });

@@ -166,15 +166,15 @@ class VolumeManager {
   }
 
   /**
-   * Copy cleaned_data.csv from an explore job's workspace to the shared datasets volume.
-   * Stores it at /datasets/{datasetId}/cleaned/data.csv so downstream stages can read it.
+   * Copy cleaned_data.feather from an explore job's workspace to the shared datasets volume.
+   * Stores it at /datasets/{datasetId}/cleaned/data.feather so downstream stages can read it.
    * @param {string} datasetId - Dataset ID
    * @param {string} jobId - Completed explore job ID
    */
   async copyCleanedDatasetToVolume(datasetId, jobId) {
     let container;
     try {
-      const content = await this.readArtifact(jobId, 'cleaned_data.csv');
+      const content = await this.readArtifact(jobId, 'cleaned_data.feather');
 
       const pack = tar.pack();
       const chunks = [];
@@ -185,7 +185,7 @@ class VolumeManager {
       });
 
       await new Promise((resolve, reject) => {
-        pack.entry({ name: 'cleaned/data.csv', size: content.length }, content, err => {
+        pack.entry({ name: 'cleaned/data.feather', size: content.length }, content, err => {
           if (err) reject(err); else resolve();
         });
       });
@@ -211,7 +211,7 @@ class VolumeManager {
       const result = await container.wait();
       if (result.StatusCode !== 0) throw new Error(`Container exited with code ${result.StatusCode}`);
 
-      console.log(`✓ Copied cleaned_data.csv to datasets volume for ${datasetId} (${content.length} bytes)`);
+      console.log(`✓ Copied cleaned_data.feather to datasets volume for ${datasetId} (${content.length} bytes)`);
       return true;
     } catch (error) {
       console.error(`Error copying cleaned dataset to volume for ${datasetId}:`, error.message);
