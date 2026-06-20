@@ -51,7 +51,9 @@ class WikiService {
     }
 
     // Direct Anthropic API (default or Foundry fallback)
-    const apiKey = process.env.ANTHROPIC_API_KEY;
+    // When using a local model via ANTHROPIC_BASE_URL, an API key may not be required;
+    // use a placeholder so the SDK initializes successfully.
+    const apiKey = process.env.ANTHROPIC_API_KEY || (process.env.ANTHROPIC_BASE_URL ? 'local' : null);
     if (!apiKey) return;
     try {
       const Anthropic = require('@anthropic-ai/sdk');

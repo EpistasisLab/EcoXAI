@@ -111,15 +111,39 @@ async function scoreTableArtifact(artifact, structure, semantic) {
         scores.unit_inference = 0.7; // No units detected, lower confidence
       }
 
-      // Check missing values handling
-      scores.missing_values_handled = metadata.missing_value_strategy !== undefined;
+      // Fix: missing_value_strategy is now populated for feather by pre-flight
+      scores.missing_values_handled = metadata.missing_value_strategy != null;
 
-      // Compute overall score
+      // Hard stop: all columns ≥90% null — corrupt file
+      if (metadata.missing_value_strategy === 'corrupt') {
+        const e = new Error('[HARD STOP] Feather file appears corrupt: all columns ≥90% null.');
+        e.code = 'FEATHER_CORRUPT';
+        throw e;
+      }
+
+      // Null-rate quality sub-score
+      scores.null_rate_quality = 1.0;
+      scores.high_null_columns = [];
+      if (metadata.null_rates) {
+        const colsAbove50 = Object.entries(metadata.null_rates).filter(([, r]) => r > 0.50);
+        const colsAbove20 = Object.entries(metadata.null_rates).filter(([, r]) => r > 0.20);
+        if (colsAbove50.length > 0) {
+          scores.null_rate_quality -= 0.1 * Math.min(colsAbove50.length, 5);
+          scores.null_rate_quality = Math.max(0.0, scores.null_rate_quality);
+          scores.high_null_columns = colsAbove50.map(([c, r]) => ({ column: c, null_rate: r }));
+        } else if (colsAbove20.length > 0) {
+          scores.null_rate_quality -= 0.05 * Math.min(colsAbove20.length, 4);
+          scores.null_rate_quality = Math.max(0.0, scores.null_rate_quality);
+        }
+      }
+
+      // Rebalanced weights (still sum to 1.0)
       scores.overall = (
-        scores.headers * 0.3 +
-        scores.numeric_parsing * 0.3 +
-        scores.unit_inference * 0.2 +
-        (scores.missing_values_handled ? 0.2 : 0.0)
+        scores.headers           * 0.30 +
+        scores.numeric_parsing   * 0.25 +
+        scores.unit_inference    * 0.20 +
+        (scores.missing_values_handled ? 0.15 : 0.0) +
+        scores.null_rate_quality * 0.10
       );
 
     } else {

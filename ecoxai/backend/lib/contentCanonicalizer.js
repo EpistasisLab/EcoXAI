@@ -466,6 +466,15 @@ async function canonicalizeFeatherFile(rawPath, tablesDir) {
       });
     });
 
+    // Run null-rate pre-flight
+    let preflightResult = null;
+    try {
+      preflightResult = await runFeatherPreflightCheck(rawPath);
+    } catch (preflightErr) {
+      if (preflightErr.code === 'FEATHER_CORRUPT') throw preflightErr;
+      console.warn('[ContentCanonicalizer] Pre-flight unavailable:', preflightErr.message);
+    }
+
     // Copy feather file directly — no CSV conversion
     const featherPath = path.join(tablesDir, 'table_1.feather');
     await fs.copyFile(rawPath, featherPath);
@@ -482,7 +491,11 @@ async function canonicalizeFeatherFile(rawPath, tablesDir) {
         name: f.name,
         type: f.type.toString(),
         nullable: f.nullable
-      }))
+      })),
+      null_rates:             preflightResult?.null_rates             ?? null,
+      missing_value_strategy: preflightResult?.missing_value_strategy ?? null,
+      quality_warnings:       preflightResult?.quality_warnings       ?? [],
+      preflight_sample_rows:  preflightResult?.sample_rows_checked    ?? null,
     };
     await fs.writeFile(metadataPath, JSON.stringify(metadata, null, 2), 'utf8');
 
@@ -550,6 +563,15 @@ except Exception as e:
       try {
         const result = JSON.parse(stdout);
 
+        // Run null-rate pre-flight
+        let preflightResult = null;
+        try {
+          preflightResult = await runFeatherPreflightCheck(rawPath);
+        } catch (preflightErr) {
+          if (preflightErr.code === 'FEATHER_CORRUPT') throw preflightErr;
+          console.warn('[ContentCanonicalizer] Pre-flight unavailable:', preflightErr.message);
+        }
+
         // Copy feather file — no CSV conversion needed
         await fs.copyFile(rawPath, featherPath);
 
@@ -560,7 +582,11 @@ except Exception as e:
           source_format: 'feather',
           columns: result.columns,
           row_count: result.row_count,
-          column_count: result.column_count
+          column_count: result.column_count,
+          null_rates:             preflightResult?.null_rates             ?? null,
+          missing_value_strategy: preflightResult?.missing_value_strategy ?? null,
+          quality_warnings:       preflightResult?.quality_warnings       ?? [],
+          preflight_sample_rows:  preflightResult?.sample_rows_checked    ?? null,
         };
         await fs.writeFile(metadataPath, JSON.stringify(metadata, null, 2), 'utf8');
 
@@ -691,6 +717,42 @@ async function canonicalizeWorkbook(rawPath, sections, tablesDir) {
   }
 
   return artifacts;
+}
+
+/**
+ * Run the feather_null_check.py pre-flight script against a feather file.
+ * Throws with err.code === 'FEATHER_CORRUPT' when hard_stop is set.
+ * Returns the parsed result object on success.
+ */
+async function runFeatherPreflightCheck(rawPath, sampleRows = 10000) {
+  const { execFile } = require('child_process');
+  const scriptPath = path.join(__dirname, '..', 'scripts', 'feather_null_check.py');
+
+  return new Promise((resolve, reject) => {
+    execFile('python', [scriptPath, rawPath, String(sampleRows)], { maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
+      if (err) {
+        return reject(new Error(`feather_null_check.py failed: ${err.message}${stderr ? '\n' + stderr : ''}`));
+      }
+      let result;
+      try {
+        result = JSON.parse(stdout.trim());
+      } catch (parseErr) {
+        return reject(new Error(`feather_null_check.py: unexpected output — ${parseErr.message}`));
+      }
+      if (result.error) {
+        return reject(new Error(`feather_null_check.py: ${result.error}`));
+      }
+      if (result.quality_warnings?.length) {
+        result.quality_warnings.forEach(w => console.warn('[ContentCanonicalizer] Pre-flight warning:', w));
+      }
+      if (result.hard_stop) {
+        const e = new Error(`[HARD STOP] ${result.hard_stop}`);
+        e.code = 'FEATHER_CORRUPT';
+        return reject(e);
+      }
+      resolve(result);
+    });
+  });
 }
 
 module.exports = {

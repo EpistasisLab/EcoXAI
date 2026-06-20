@@ -4,6 +4,8 @@ const WebSocket = require('ws');
 const express = require('express');
 const cors = require('cors');
 const multer = require('multer');
+const MAX_FEATHER_BYTES = parseInt(process.env.MAX_FEATHER_BYTES, 10) || 2 * 1024 * 1024 * 1024;
+const MAX_FEATHER_ROWS  = parseInt(process.env.MAX_FEATHER_ROWS,  10) || 5_000_000;
 const http = require('http');
 const path = require('path');
 const fs = require('fs');
@@ -47,7 +49,10 @@ if (fs.existsSync(frontendPath)) {
   app.use(express.static(frontendPath));
 }
 
-const upload = multer({ storage: multer.memoryStorage() });
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_FEATHER_BYTES },
+});
 
 // ── State ─────────────────────────────────────────────────────────────────────
 const STATE_FILE = path.join(__dirname, 'data', 'state.json');
@@ -69,16 +74,17 @@ function loadState() {
         loaded.jobs = loaded.jobs.map(j => ({ ...j, selectedSkills: j.selectedSkills || [], skillsInvoked: j.skillsInvoked || [] }));
       }
       loaded.budget = loaded.budget || { totalCostUsd: 0, jobCount: 0 };
-      loaded.settings = loaded.settings || { budgetLimitUsd: 10, maxParallelJobs: 3, maxHypothesisCycles: 2 };
+      loaded.settings = loaded.settings || { budgetLimitUsd: 10, maxParallelJobs: 3, maxHypothesisCycles: 2, containerRamMb: 2048 };
       if (loaded.settings.maxParallelJobs === undefined) loaded.settings.maxParallelJobs = 3;
       if (loaded.settings.maxHypothesisCycles === undefined) loaded.settings.maxHypothesisCycles = 2;
+      if (loaded.settings.containerRamMb === undefined) loaded.settings.containerRamMb = 2048;
       console.log(`Loaded state: ${loaded.jobs?.length || 0} jobs, ${Object.keys(loaded.datasets || {}).length} datasets`);
       return loaded;
     }
   } catch (error) {
     console.error('Failed to load state:', error.message);
   }
-  return { jobs: [], datasets: {}, budget: { totalCostUsd: 0, jobCount: 0 }, settings: { budgetLimitUsd: 10, maxParallelJobs: 3, maxHypothesisCycles: 2 } };
+  return { jobs: [], datasets: {}, budget: { totalCostUsd: 0, jobCount: 0 }, settings: { budgetLimitUsd: 10, maxParallelJobs: 3, maxHypothesisCycles: 2, containerRamMb: 2048 } };
 }
 
 let state = loadState();
@@ -231,6 +237,8 @@ const routeDeps = {
   normalizationService,
   upload,
   orchestrator,
+  MAX_FEATHER_BYTES,
+  MAX_FEATHER_ROWS,
 };
 
 routeDeps.startJobExecution = (jobId, opts) =>
@@ -279,8 +287,8 @@ app.get('/api/settings', (req, res) => {
 });
 
 app.put('/api/settings', (req, res) => {
-  if (!state.settings) state.settings = { budgetLimitUsd: 10, maxParallelJobs: 3, maxHypothesisCycles: 2 };
-  const { budgetLimitUsd, maxParallelJobs, maxHypothesisCycles } = req.body;
+  if (!state.settings) state.settings = { budgetLimitUsd: 10, maxParallelJobs: 3, maxHypothesisCycles: 2, containerRamMb: 2048 };
+  const { budgetLimitUsd, maxParallelJobs, maxHypothesisCycles, containerRamMb } = req.body;
   if (budgetLimitUsd !== undefined) {
     const limit = parseFloat(budgetLimitUsd);
     if (isNaN(limit) || limit < 0) return res.status(400).json({ success: false, error: 'budgetLimitUsd must be a non-negative number' });
@@ -295,6 +303,11 @@ app.put('/api/settings', (req, res) => {
     const val = parseInt(maxHypothesisCycles, 10);
     if (isNaN(val) || val < 0) return res.status(400).json({ success: false, error: 'maxHypothesisCycles must be a non-negative integer' });
     state.settings.maxHypothesisCycles = val;
+  }
+  if (containerRamMb !== undefined) {
+    const mb = parseInt(containerRamMb, 10);
+    if (isNaN(mb) || mb < 256 || mb > 65536) return res.status(400).json({ success: false, error: 'containerRamMb must be between 256 and 65536' });
+    state.settings.containerRamMb = mb;
   }
   saveState();
   broadcast({ type: 'SETTINGS_UPDATE', settings: state.settings });
@@ -340,6 +353,14 @@ function watchDatasetFolder() {
       console.log(`[Watcher] New dataset file detected: ${filename}`);
 
       try {
+        if (ext === '.feather') {
+          const stat = fs.statSync(filePath);
+          if (stat.size > MAX_FEATHER_BYTES) {
+            console.error(`[Watcher] Rejected ${filename}: ${stat.size} bytes exceeds ${MAX_FEATHER_BYTES} byte limit`);
+            return;
+          }
+        }
+
         const buffer = fs.readFileSync(filePath);
         const datasetId = `dataset_${Date.now()}`;
         let parsedData;

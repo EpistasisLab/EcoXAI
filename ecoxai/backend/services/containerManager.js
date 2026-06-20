@@ -129,9 +129,9 @@ class ExecutionLogBuffer {
 
 const CONTAINER_CONFIG = {
   IMAGE: 'ecoxai-agent',
-  MEMORY_LIMIT: 2 * 1024 * 1024 * 1024,
-  CPU_SHARES: 1024,
-  TIMEOUT_MS: 48 * 60 * 60 * 1000,
+  MEMORY_LIMIT: 12 * 1024 * 1024 * 1024, // 12GB
+  CPU_SHARES: 2048, // 2 CPUs
+  TIMEOUT_MS: 48 * 60 * 60 * 1000, // 48 hours
 };
 
 const DATASETS_VOLUME = 'ecoxai-datasets';
@@ -193,6 +193,8 @@ class ContainerManager {
         envVars.push(`SELECTED_SKILLS=${selectedSkills.join(',')}`);
       }
 
+      if (job._hypothesisId) envVars.push(`HYPOTHESIS_ID=${job._hypothesisId}`);
+
       if (process.env.CLAUDE_CODE_USE_FOUNDRY === '1') {
         envVars.push(`CLAUDE_CODE_USE_FOUNDRY=1`);
         envVars.push(`ANTHROPIC_FOUNDRY_RESOURCE=${process.env.ANTHROPIC_FOUNDRY_RESOURCE}`);
@@ -216,12 +218,15 @@ class ContainerManager {
         `${DATASETS_VOLUME}:/datasets:ro`,
       ];
 
+      const ramMb = state?.settings?.containerRamMb ?? 12288;
+      const memoryBytes = ramMb * 1024 * 1024;
+
       const container = await docker.createContainer({
         Image: CONTAINER_CONFIG.IMAGE,
         Env: envVars,
         HostConfig: {
           Binds: binds,
-          Memory: CONTAINER_CONFIG.MEMORY_LIMIT,
+          Memory: memoryBytes,
           CpuShares: CONTAINER_CONFIG.CPU_SHARES,
           AutoRemove: false,
         },

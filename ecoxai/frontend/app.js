@@ -49,7 +49,7 @@ const state = {
   skillsLoaded: false,
   showNewSkillForm: false,
   serverBudget: { totalCostUsd: 0, jobCount: 0 },
-  serverSettings: { budgetLimitUsd: 10, maxParallelJobs: 3 },
+  serverSettings: { budgetLimitUsd: 10, maxParallelJobs: 3, containerRamMb: 12288 },
 };
 
 // ── WebSocket ─────────────────────────────────────────────────────────────────
@@ -1215,6 +1215,7 @@ function applySettingsToForm() {
   document.getElementById('s-autoscroll').checked = settings.autoScroll;
   document.getElementById('s-max-parallel-jobs').value = state.serverSettings.maxParallelJobs ?? 3;
   document.getElementById('s-max-hypothesis-cycles').value = state.serverSettings.maxHypothesisCycles ?? 2;
+  document.getElementById('s-container-ram').value = state.serverSettings.containerRamMb ?? 12288;
   document.getElementById('s-budget-limit').value = state.serverSettings.budgetLimitUsd ?? 10;
   renderBudgetStatus();
 }
@@ -1481,10 +1482,12 @@ window.app = {
     const budgetLimitUsd = parseFloat(document.getElementById('s-budget-limit').value);
     const maxParallelJobs = parseInt(document.getElementById('s-max-parallel-jobs').value);
     const maxHypothesisCycles = parseInt(document.getElementById('s-max-hypothesis-cycles').value);
+    const containerRamMb = parseInt(document.getElementById('s-container-ram').value);
     const backendBody = {};
     if (!isNaN(budgetLimitUsd) && budgetLimitUsd >= 0) backendBody.budgetLimitUsd = budgetLimitUsd;
     if (!isNaN(maxParallelJobs) && maxParallelJobs >= 1) backendBody.maxParallelJobs = maxParallelJobs;
     if (!isNaN(maxHypothesisCycles) && maxHypothesisCycles >= 0) backendBody.maxHypothesisCycles = maxHypothesisCycles;
+    if (!isNaN(containerRamMb) && containerRamMb >= 256) backendBody.containerRamMb = containerRamMb;
     if (Object.keys(backendBody).length) {
       try {
         const resp = await fetch(`${apiBase()}/settings`, {

@@ -661,10 +661,12 @@ The output contract remains unchanged.
 
 ## verdict_results.json
 
+`hypothesis_id` MUST be an integer — use `int(os.environ.get("HYPOTHESIS_ID", 0))` or the integer from the `/api/hypotheses` response. Do NOT use a string label.
+
 ```json
 [
   {
-    "hypothesis_id":"123",
+    "hypothesis_id": 123,
     "verdict":"supported",
     "actual_importance":0.14,
     "reasoning":"OR=1.82, 95%CI=[1.32,2.51], adjusted p=0.002"

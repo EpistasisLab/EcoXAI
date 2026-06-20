@@ -285,6 +285,10 @@ class DatabaseManager {
     return this._get('SELECT * FROM hypotheses WHERE hypothesis_id = ?', [hypothesisId]);
   }
 
+  getHypothesisByText(text) {
+    return this._get('SELECT * FROM hypotheses WHERE hypothesis_text = ?', [text]);
+  }
+
   getRunByJobId(jobId) {
     return this._get('SELECT run_id FROM agent_runs WHERE job_id = ? LIMIT 1', [jobId]);
   }

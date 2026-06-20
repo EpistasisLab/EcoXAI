@@ -34,6 +34,16 @@ function createPipelineRoutes({ orchestrator }) {
     }
   });
 
+  router.post('/pipeline/reprocess-verdicts/:datasetId', async (req, res) => {
+    const { datasetId } = req.params;
+    try {
+      const result = await orchestrator.reprocessVerdictsFromDB(datasetId);
+      res.json({ success: true, ...result });
+    } catch (error) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
   router.put('/pipeline/stages/:stageId', (req, res) => {
     const { stageId } = req.params;
     const { skill, prompt, name, auto } = req.body || {};

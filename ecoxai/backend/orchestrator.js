@@ -385,8 +385,16 @@ class Orchestrator extends EventEmitter {
         this._broadcastStageUpdate('normalize', 'Normalize Dataset', 'running', null, datasetId, `[${stage}/${total}] ${name}${detail ? ': ' + detail : ''}`);
       });
       if (!normResult.success) {
+        const isHardStop = normResult.error?.startsWith('[HARD STOP]');
         console.error(`[Orchestrator] Normalization failed for ${datasetId}:`, normResult.error);
-        this._broadcastStageUpdate('normalize', 'Normalize Dataset', 'failed', null, datasetId);
+        this._broadcastStageUpdate('normalize', 'Normalize Dataset', 'failed', null, datasetId,
+          isHardStop ? normResult.error : undefined);
+        if (isHardStop) {
+          state.datasets[datasetId].status = 'rejected';
+          state.datasets[datasetId].rejectionReason = normResult.error;
+          saveState();
+          broadcast({ type: 'DATASETS_PROMOTED', datasets: Object.values(state.datasets) });
+        }
         return;
       }
 
@@ -577,6 +585,27 @@ class Orchestrator extends EventEmitter {
     }
   }
 
+  async reprocessVerdictsFromDB(datasetId) {
+    const { dbManager } = this.deps;
+    if (!dbManager) return { processed: 0 };
+    const rows = dbManager._all(
+      `SELECT * FROM agent_runs WHERE dataset_id = ? AND artifacts_json LIKE '%verdict_results.json%' ORDER BY started_at DESC`,
+      [datasetId]
+    );
+    let processed = 0;
+    for (const row of rows) {
+      try {
+        const artifacts = typeof row.artifacts_json === 'string' ? JSON.parse(row.artifacts_json) : row.artifacts_json;
+        if (!Array.isArray(artifacts)) continue;
+        await this._processTestResults(datasetId, artifacts, null);
+        processed++;
+      } catch (err) {
+        console.warn('[Orchestrator] reprocessVerdictsFromDB error:', err.message);
+      }
+    }
+    return { processed };
+  }
+
   async _processTestResults(datasetId, artifacts, hypothesisId = null) {
     const { dbManager, broadcast } = this.deps;
     if (!dbManager) return;
@@ -593,13 +622,21 @@ class Orchestrator extends EventEmitter {
         const verdictData = JSON.parse(verdictArtifact.content);
         let updated = 0;
         for (const item of verdictData) {
-          if (!item.hypothesis_id || !['supported', 'rejected', 'needs_more_data'].includes(item.verdict)) continue;
-          await dbManager.updateHypothesis(item.hypothesis_id, {
+          if (!['supported', 'rejected', 'needs_more_data'].includes(item.verdict)) continue;
+          // Resolve target hypothesis ID: numeric from JSON > job-context integer > text lookup
+          let targetId = (typeof item.hypothesis_id === 'number') ? item.hypothesis_id : null;
+          if (!targetId && hypothesisId) targetId = hypothesisId;
+          if (!targetId && item.hypothesis_text) {
+            const found = await dbManager.getHypothesisByText(item.hypothesis_text);
+            if (found) targetId = found.hypothesis_id;
+          }
+          if (!targetId) continue;
+          await dbManager.updateHypothesis(targetId, {
             status: item.verdict,
             actual_importance: item.actual_importance ?? null,
             evaluation_reasoning: item.reasoning || null,
           });
-          resolvedIds.add(item.hypothesis_id);
+          resolvedIds.add(targetId);
           updated++;
         }
         if (updated > 0) {
