@@ -210,8 +210,15 @@ class Orchestrator extends EventEmitter {
       console.log(`[Orchestrator] Auto-mode off, skipping hypothesis analysis for ${datasetId}`);
       return;
     }
+
     const queue = this.hypothesisQueues.get(datasetId);
-    if (!queue || !queue.length) {
+
+    const runningAnalyzeCount = (this.deps.state.jobs || [])
+      .filter(j => j.status === 'in-progress' && j._stageId === 'analyze' && j.datasetId === datasetId)
+      .length;
+
+    // All done only when queue is empty AND no running analyze jobs remain
+    if ((!queue || !queue.length) && runningAnalyzeCount === 0) {
       this.hypothesisQueues.delete(datasetId);
       const done = (this.hypothesisCycles.get(datasetId) || 0) + 1;
       const max = this.deps.state.settings?.maxHypothesisCycles ?? 2;
@@ -225,10 +232,19 @@ class Orchestrator extends EventEmitter {
       }
       return;
     }
-    const hypothesis = queue.shift();
+
+    if (!queue || !queue.length) return; // Queue empty, still waiting for in-flight jobs
+
+    const maxParallelJobs = this.deps.state.settings?.maxParallelJobs ?? 3;
+    const availableSlots = Math.max(0, maxParallelJobs - runningAnalyzeCount);
+    if (availableSlots === 0) return;
+
     const stage = PIPELINE_STAGES.find(s => s.id === 'analyze');
-    console.log(`[Orchestrator] Testing hypothesis ${hypothesis.hypothesis_id} (${queue.length} remaining) for dataset ${datasetId}`);
-    await this._runStage(stage, { datasetId, hypothesis });
+    const toRun = queue.splice(0, availableSlots); // safely handles fewer items than slots
+    for (const hypothesis of toRun) {
+      console.log(`[Orchestrator] Testing hypothesis ${hypothesis.hypothesis_id} (${queue.length} remaining) for dataset ${datasetId}`);
+      await this._runStage(stage, { datasetId, hypothesis });
+    }
   }
 
   async _runHypothesizeWithContext(datasetId) {

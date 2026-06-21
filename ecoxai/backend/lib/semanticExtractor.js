@@ -106,7 +106,11 @@ async function extractWithLLM(structure, contentResult) {
     }]
   });
 
-  const responseText = response.content[0].text;
+  const textBlock = response.content.find(b => b.type === 'text');
+  if (!textBlock || !textBlock.text) {
+    throw new Error('No text content block in LLM response');
+  }
+  const responseText = textBlock.text;
 
   // Parse JSON response
   const jsonMatch = responseText.match(/```json\n([\s\S]+?)\n```/);

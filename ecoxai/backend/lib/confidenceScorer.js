@@ -106,7 +106,9 @@ async function scoreTableArtifact(artifact, structure, semantic) {
 
       if (hasUnits) {
         const columnsWithUnits = columns.filter(c => semantic.units[c.name]);
-        scores.unit_inference = columnsWithUnits.length / numericColumns.length || 0.5;
+        scores.unit_inference = numericColumns.length > 0
+          ? columnsWithUnits.length / numericColumns.length
+          : 0.5;
       } else {
         scores.unit_inference = 0.7; // No units detected, lower confidence
       }

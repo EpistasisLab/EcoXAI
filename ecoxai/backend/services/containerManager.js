@@ -317,7 +317,7 @@ class ContainerManager {
             status: result.StatusCode === 0 ? 'completed' : 'failed',
             total_cost_usd: logBuffer.completionData?.total_cost_usd || null,
             num_turns: logBuffer.completionData?.num_turns || logBuffer.currentTurn,
-            artifacts_json: JSON.stringify(artifacts),
+            artifacts_json: JSON.stringify(artifacts.map(({ buffer, ...a }) => a)),
             skills_invoked: Array.from(skillsInvoked).join(',') || null,
             error_message: logBuffer.errorMessage || null
           });
@@ -404,25 +404,43 @@ class ContainerManager {
             return true;
           });
         const BINARY_EXTS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.svg', '.pdf']);
+        // Large data formats: never load into Node memory — record path reference only.
+        // The files remain in the Docker volume and are served via volumeManager on demand.
+        const DATA_EXTS = new Set(['.feather', '.parquet', '.h5', '.hdf5', '.pkl', '.npy', '.npz']);
         const volumeManager = require('./volumeManager');
-        const relativePaths = filePaths.map(fp => fp.replace('/workspace/', ''));
-        const readResults = await volumeManager.readArtifacts(jobId, relativePaths);
 
+        // Separate paths: data-format files get metadata only; others are read into memory.
+        const toReadPaths = [];
+        const toReadIndices = [];
         for (let i = 0; i < filePaths.length; i++) {
-          const filePath = filePaths[i];
-          const filename = filePath.split('/').pop();
-          const ext = path.extname(filename).toLowerCase();
-          const isBinary = BINARY_EXTS.has(ext);
-          const result = readResults[i];
-
-          if (result.buffer) {
-            if (isBinary || result.buffer.length > MAX_TEXT_BYTES) {
-              artifacts.push({ name: filename, path: filePath.replace('/workspace/', ''), jobId, buffer: result.buffer });
-            } else {
-              artifacts.push({ name: filename, path: filePath.replace('/workspace/', ''), jobId, content: result.buffer.toString('utf-8') });
-            }
+          const ext = path.extname(filePaths[i].split('/').pop()).toLowerCase();
+          if (DATA_EXTS.has(ext)) {
+            const filename = filePaths[i].split('/').pop();
+            artifacts.push({ name: filename, path: filePaths[i].replace('/workspace/', ''), jobId });
           } else {
-            artifacts.push({ name: filename, path: filePath.replace('/workspace/', ''), jobId });
+            toReadPaths.push(filePaths[i].replace('/workspace/', ''));
+            toReadIndices.push(i);
+          }
+        }
+
+        if (toReadPaths.length > 0) {
+          const readResults = await volumeManager.readArtifacts(jobId, toReadPaths);
+          for (let j = 0; j < toReadPaths.length; j++) {
+            const filePath = filePaths[toReadIndices[j]];
+            const filename = filePath.split('/').pop();
+            const ext = path.extname(filename).toLowerCase();
+            const isBinary = BINARY_EXTS.has(ext);
+            const result = readResults[j];
+
+            if (result.buffer) {
+              if (isBinary || result.buffer.length > MAX_TEXT_BYTES) {
+                artifacts.push({ name: filename, path: filePath.replace('/workspace/', ''), jobId, buffer: result.buffer });
+              } else {
+                artifacts.push({ name: filename, path: filePath.replace('/workspace/', ''), jobId, content: result.buffer.toString('utf-8') });
+              }
+            } else {
+              artifacts.push({ name: filename, path: filePath.replace('/workspace/', ''), jobId });
+            }
           }
         }
       }

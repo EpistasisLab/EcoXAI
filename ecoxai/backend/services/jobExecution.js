@@ -45,14 +45,17 @@ async function startJobExecution(deps, jobId, options = {}) {
     };
   }
 
-  const maxParallelJobs = state.settings?.maxParallelJobs ?? 3;
-  const runningCount = state.jobs.filter(j => j.status === 'in-progress').length;
-  if (runningCount >= maxParallelJobs) {
-    return {
-      success: false,
-      error: `Max parallel jobs (${maxParallelJobs}) already running. Wait for a job to finish or raise the limit in Settings.`,
-      status: 429,
-    };
+  // Only enforce parallel limit for analyze (hypothesis test & validation) jobs
+  if (job._stageId === 'analyze') {
+    const maxParallelJobs = state.settings?.maxParallelJobs ?? 3;
+    const runningAnalyzeCount = state.jobs.filter(j => j.status === 'in-progress' && j._stageId === 'analyze').length;
+    if (runningAnalyzeCount >= maxParallelJobs) {
+      return {
+        success: false,
+        error: `Max parallel analyze jobs (${maxParallelJobs}) already running. Wait for a job to finish or raise the limit in Settings.`,
+        status: 429,
+      };
+    }
   }
 
   try {
