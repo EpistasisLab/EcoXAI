@@ -151,6 +151,7 @@ class Orchestrator extends EventEmitter {
           console.warn(`[Orchestrator] Stage ${stageId} permanently failed after ${MAX_STAGE_RETRIES} retries for dataset ${datasetId}`);
           this._broadcastStageUpdate(stageId, this._getStageName(stageId), 'failed', jobId, datasetId);
         }
+        await this._deleteWorkspaceVolume(jobId);
         return;
       }
 
@@ -382,6 +383,14 @@ class Orchestrator extends EventEmitter {
     setImmediate(() => this._advanceStuckDatasets().catch(err => console.error('[Orchestrator] Resume advance error:', err.message)));
   }
 
+  startup() {
+    if (this.autoMode && this.deps) {
+      setImmediate(() => this._advanceStuckDatasets().catch(err =>
+        console.error('[Orchestrator] Startup advance error:', err.message)
+      ));
+    }
+  }
+
   async _normalizeAndStart(datasetId) {
     const { state, saveState, broadcast, volumeManager, normalizationService, dbManager } = this.deps;
     const dataset = state.datasets[datasetId];
@@ -537,6 +546,22 @@ class Orchestrator extends EventEmitter {
           console.log(`[Orchestrator] Resume: rebuilding hypothesis queue for ${datasetId} from DB (${untested.length} untested)`);
           this.hypothesisQueues.set(datasetId, [...untested]);
           await this._runNextHypothesisAnalysis(datasetId);
+        } else if (allHypotheses.length > 0) {
+          // All hypotheses tested — check if another hypothesize cycle should run
+          const noAnalyzeRunning = !jobs.some(j => j._stageId === 'analyze' && j.datasetId === datasetId && (j.status === 'running' || j.status === 'in-progress'));
+          const noHypothesizeRunning = !jobs.some(j => j._stageId === 'hypothesize' && j.datasetId === datasetId && (j.status === 'running' || j.status === 'in-progress' || j.status === 'todo'));
+          if (noAnalyzeRunning && noHypothesizeRunning) {
+            const done = (this.hypothesisCycles.get(datasetId) || 0) + 1;
+            const max = this.deps.state.settings?.maxHypothesisCycles ?? 2;
+            const cycleLabel = max === -1 ? `${done}/∞` : `${done}/${max}`;
+            if (max === -1 || done <= max) {
+              console.log(`[Orchestrator] Resume: all hypotheses tested, triggering regeneration cycle ${cycleLabel} for dataset ${datasetId}`);
+              this.hypothesisCycles.set(datasetId, done);
+              await this._runHypothesizeWithContext(datasetId);
+            } else {
+              console.log(`[Orchestrator] Resume: all hypotheses tested, max cycles reached (${max}) for dataset ${datasetId}`);
+            }
+          }
         }
       }
     }

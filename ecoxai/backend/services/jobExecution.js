@@ -161,6 +161,9 @@ async function startJobExecution(deps, jobId, options = {}) {
         broadcast({ type: 'JOB_FAILED', jobId, error: error.message });
         broadcast({ type: 'JOB_UPDATE', jobs: state.jobs });
         console.error(`Job ${jobId} failed:`, error.message);
+        // Cleanup workspace volume on failure
+        volumeManager.deleteWorkspaceVolume(jobId)
+          .catch(err => console.warn(`[Volume] Cleanup failed for ${jobId}:`, err.message));
       },
       // onHypothesesExtracted callback
       (hypotheses) => {

@@ -19,7 +19,7 @@ const CONTENT_TYPES = {
   '.py': 'text/x-python',
 };
 
-function createJobsRoutes({ state, saveState, broadcast, findJob, updateJob, containerManager }) {
+function createJobsRoutes({ state, saveState, broadcast, findJob, updateJob, containerManager, volumeManager }) {
 
   router.post('/jobs/:id/stop', async (req, res) => {
     const job = findJob(req.params.id);
@@ -27,6 +27,8 @@ function createJobsRoutes({ state, saveState, broadcast, findJob, updateJob, con
     if (job.status !== 'in-progress') return res.status(400).json({ error: 'Job is not running' });
     try {
       await containerManager.stopJob(req.params.id);
+      volumeManager.deleteWorkspaceVolume(req.params.id)
+        .catch(err => console.warn(`[Volume] Cleanup failed for ${req.params.id}:`, err.message));
       updateJob(req.params.id, { status: 'failed', exitCode: -1, completedAt: new Date().toISOString() });
       broadcast({ type: 'JOB_STOPPED', jobId: req.params.id });
       broadcast({ type: 'JOB_UPDATE', jobs: state.jobs });

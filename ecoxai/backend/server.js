@@ -436,6 +436,9 @@ async function start() {
   // Reconcile stale jobs
   await reconcileStaleJobs();
 
+  // Advance any stuck pipeline stages from before shutdown
+  orchestrator.startup();
+
   // Start file watcher
   watchDatasetFolder();
 
