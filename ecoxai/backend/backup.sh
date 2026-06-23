@@ -75,10 +75,11 @@ fi
 echo "[3/5] Exporting Docker volume ecoxai-datasets..."
 mkdir -p "$STAGING/datasets"
 if docker volume inspect ecoxai-datasets >/dev/null 2>&1; then
+  STAGING_WIN="$(cygpath -w "$STAGING/datasets" 2>/dev/null || echo "$STAGING/datasets")"
   docker run --rm \
     -v ecoxai-datasets:/source:ro \
-    -v "$STAGING/datasets":/dest \
-    alpine sh -c "cp -a /source/. /dest/ 2>/dev/null || true"
+    -v "${STAGING_WIN}:/dest" \
+    alpine sh -c "cp -a /source/. /dest/"
   echo "      ecoxai-datasets volume exported."
 else
   echo "      WARNING: Docker volume ecoxai-datasets not found — skipping."

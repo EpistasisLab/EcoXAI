@@ -549,15 +549,40 @@ async function loadAssetContent(jobId, filename) {
     } else if (filename.endsWith('.json')) {
       let display = text;
       try { display = JSON.stringify(JSON.parse(text), null, 2); } catch {}
-      previewArea.innerHTML = `<pre class="asset-preview">${escHtml(display.slice(0, 10000))}</pre>`;
+      renderLazyText(previewArea, display);
     } else if (filename.endsWith('.md')) {
       previewArea.innerHTML = renderMarkdown(text);
     } else {
-      previewArea.innerHTML = `<pre class="asset-preview">${escHtml(text.slice(0, 10000))}</pre>`;
+      renderLazyText(previewArea, text);
     }
   } catch (e) {
     previewArea.innerHTML = `<div style="padding:8px;font-size:12px;color:var(--red)">Failed to load: ${escHtml(e.message)}</div>`;
   }
+}
+
+function renderLazyText(container, text, chunkSize = 10000) {
+  let offset = 0;
+  const pre = document.createElement('pre');
+  pre.className = 'asset-preview';
+  container.innerHTML = '';
+  container.appendChild(pre);
+
+  function loadMore() {
+    pre.textContent += text.slice(offset, offset + chunkSize);
+    offset = Math.min(offset + chunkSize, text.length);
+    const existing = container.querySelector('.load-more-btn');
+    if (existing) existing.remove();
+    if (offset < text.length) {
+      const remaining = Math.ceil((text.length - offset) / chunkSize);
+      const btn = document.createElement('button');
+      btn.className = 'load-more-btn';
+      btn.textContent = `Load more (${remaining} chunk${remaining !== 1 ? 's' : ''} remaining)`;
+      btn.onclick = loadMore;
+      container.appendChild(btn);
+    }
+  }
+
+  loadMore();
 }
 
 function buildCsvTable(text) {
@@ -1447,11 +1472,11 @@ window.app = {
       } else if (filename.endsWith('.json')) {
         let display = text;
         try { display = JSON.stringify(JSON.parse(text), null, 2); } catch {}
-        previewArea.innerHTML = `<pre class="asset-preview">${escHtml(display.slice(0, 10000))}</pre>`;
+        renderLazyText(previewArea, display);
       } else if (filename.endsWith('.md')) {
         previewArea.innerHTML = renderMarkdown(text);
       } else {
-        previewArea.innerHTML = `<pre class="asset-preview">${escHtml(text.slice(0, 10000))}</pre>`;
+        renderLazyText(previewArea, text);
       }
     } catch (e) {
       previewArea.innerHTML = `<div style="padding:8px;font-size:12px;color:var(--red)">Failed: ${escHtml(e.message)}</div>`;

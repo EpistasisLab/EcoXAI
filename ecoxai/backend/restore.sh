@@ -110,17 +110,15 @@ fi
 # --- Restore Docker volume ecoxai-datasets ---
 echo "[6/6] Restoring Docker volume ecoxai-datasets..."
 if [ -d "$STAGING/datasets" ]; then
-  # Ensure volume exists
   docker volume inspect ecoxai-datasets >/dev/null 2>&1 || docker volume create ecoxai-datasets
 
-  # Clear existing volume content
   docker run --rm \
     -v ecoxai-datasets:/dest \
     alpine sh -c "rm -rf /dest/*"
 
-  # Copy restored data in
+  STAGING_WIN="$(cygpath -w "$STAGING/datasets" 2>/dev/null || echo "$STAGING/datasets")"
   docker run --rm \
-    -v "$STAGING/datasets":/source:ro \
+    -v "${STAGING_WIN}:/source:ro" \
     -v ecoxai-datasets:/dest \
     alpine sh -c "cp -a /source/. /dest/"
 
