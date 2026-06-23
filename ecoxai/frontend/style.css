@@ -435,6 +435,11 @@ html, body { height: 100%; font-family: 'Segoe UI', system-ui, sans-serif; backg
 .hyp-toggle-btn:hover { background: var(--bg2); color: var(--text); }
 .hyp-toggle-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 
+/* Hypothesis export icon button */
+.hyp-icon-btn { display: inline-flex; align-items: center; gap: 5px; padding: 4px 9px; border: 1px solid var(--border); border-radius: 4px; background: transparent; color: var(--text-dim); font-size: 11px; font-family: inherit; cursor: pointer; transition: background 0.15s, color 0.15s, border-color 0.15s; }
+.hyp-icon-btn:hover { background: var(--bg2); color: var(--text); border-color: var(--accent); }
+.hyp-icon-btn svg { flex-shrink: 0; }
+
 /* Hypothesis graph pane */
 #hyp-graph-pane { flex: 1; min-height: 0; flex-direction: column; }
 #view-hypotheses { flex-direction: column; height: 100%; }

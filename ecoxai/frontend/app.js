@@ -920,6 +920,9 @@ document.getElementById('hyp-group').addEventListener('change', e => {
 });
 document.getElementById('hyp-btn-list').addEventListener('click', () => showHypView('list'));
 document.getElementById('hyp-btn-graph').addEventListener('click', () => showHypView('graph'));
+document.getElementById('hyp-export-btn').addEventListener('click', () => {
+  window.location.href = `${apiBase()}/hypotheses/export/csv`;
+});
 
 // ── Hypothesis Graph (native D3) ─────────────────────────────────────────────
 
@@ -1515,7 +1518,7 @@ window.app = {
     const backendBody = {};
     if (!isNaN(budgetLimitUsd) && budgetLimitUsd >= 0) backendBody.budgetLimitUsd = budgetLimitUsd;
     if (!isNaN(maxParallelJobs) && maxParallelJobs >= 1) backendBody.maxParallelJobs = maxParallelJobs;
-    if (!isNaN(maxHypothesisCycles) && maxHypothesisCycles >= 0) backendBody.maxHypothesisCycles = maxHypothesisCycles;
+    if (!isNaN(maxHypothesisCycles) && maxHypothesisCycles >= -1) backendBody.maxHypothesisCycles = maxHypothesisCycles;
     if (!isNaN(containerRamMb) && containerRamMb >= 256) backendBody.containerRamMb = containerRamMb;
     if (Object.keys(backendBody).length) {
       try {

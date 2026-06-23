@@ -303,7 +303,7 @@ app.put('/api/settings', (req, res) => {
   }
   if (maxHypothesisCycles !== undefined) {
     const val = parseInt(maxHypothesisCycles, 10);
-    if (isNaN(val) || val < 0) return res.status(400).json({ success: false, error: 'maxHypothesisCycles must be a non-negative integer' });
+    if (isNaN(val) || val < -1) return res.status(400).json({ success: false, error: 'maxHypothesisCycles must be -1 (infinite) or a non-negative integer' });
     state.settings.maxHypothesisCycles = val;
   }
   if (containerRamMb !== undefined) {

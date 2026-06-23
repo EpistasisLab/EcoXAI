@@ -222,8 +222,9 @@ class Orchestrator extends EventEmitter {
       this.hypothesisQueues.delete(datasetId);
       const done = (this.hypothesisCycles.get(datasetId) || 0) + 1;
       const max = this.deps.state.settings?.maxHypothesisCycles ?? 2;
-      if (done <= max) {
-        console.log(`[Orchestrator] All hypotheses tested. Regeneration cycle ${done}/${max} for dataset ${datasetId}`);
+      if (max === -1 || done <= max) {
+        const cycleLabel = max === -1 ? `${done}/∞` : `${done}/${max}`;
+        console.log(`[Orchestrator] All hypotheses tested. Regeneration cycle ${cycleLabel} for dataset ${datasetId}`);
         this.hypothesisCycles.set(datasetId, done);
         await this._runHypothesizeWithContext(datasetId);
       } else {

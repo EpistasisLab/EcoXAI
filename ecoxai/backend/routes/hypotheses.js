@@ -142,6 +142,41 @@ function createHypothesesRoutes({ state, saveState, broadcast, dbManager }) {
     }
   });
 
+  // GET /api/hypotheses/export/csv — must be before /:hypothesisId wildcard
+  router.get('/hypotheses/export/csv', async (req, res) => {
+    try {
+      const hypotheses = await dbManager.listHypotheses({ limit: 9999 });
+
+      const COLUMNS = [
+        'hypothesis_id', 'hypothesis_text', 'status', 'hypothesis_type',
+        'confidence_score', 'feature_name', 'expected_metric',
+        'expected_importance', 'actual_importance', 'evaluation_reasoning',
+        'conclusion_text', 'graph_source', 'extracted_at', 'run_id',
+      ];
+
+      function csvField(value) {
+        if (value === null || value === undefined) return '';
+        const str = String(value);
+        if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
+          return '"' + str.replace(/"/g, '""') + '"';
+        }
+        return str;
+      }
+
+      const lines = [COLUMNS.join(',')];
+      for (const h of hypotheses) {
+        lines.push(COLUMNS.map(col => csvField(h[col])).join(','));
+      }
+
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', 'attachment; filename="hypotheses.csv"');
+      res.send(lines.join('\r\n'));
+    } catch (error) {
+      console.error('Error exporting hypotheses CSV:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
   // GET /api/hypotheses/:hypothesisId - Get hypothesis with evidence
   router.get('/hypotheses/:hypothesisId', async (req, res) => {
     try {
