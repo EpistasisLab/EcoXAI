@@ -1518,6 +1518,64 @@ window.app = {
     } catch (e) { console.warn('Failed to reset budget:', e); }
   },
 
+  onRestoreFileSelected() {
+    const f = document.getElementById('restore-file').files[0];
+    document.getElementById('restore-btn').disabled = !f;
+    document.getElementById('restore-status').textContent = f ? f.name : '';
+  },
+
+  async downloadBackup() {
+    const btn = document.getElementById('backup-btn');
+    const st  = document.getElementById('backup-status');
+    btn.disabled = true;
+    st.textContent = 'Creating backup\u2026';
+    try {
+      const resp = await fetch(`${apiBase()}/backup`);
+      if (!resp.ok) throw new Error(await resp.text());
+      const blob = await resp.blob();
+      const cd   = resp.headers.get('Content-Disposition') || '';
+      const name = cd.match(/filename="?([^"]+)"?/)?.[1] || 'ecoxai-backup.tar.gz';
+      const a    = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = name;
+      a.click();
+      st.textContent = `\u2713 ${name}`;
+    } catch (e) {
+      st.textContent = `Error: ${e.message}`;
+    } finally {
+      btn.disabled = false;
+    }
+  },
+
+  async uploadRestore() {
+    const file = document.getElementById('restore-file').files[0];
+    if (!file) return;
+    if (!confirm(
+      `Restore from "${file.name}"?\n\n` +
+      'This will OVERWRITE all current state (jobs, datasets, budget, wikis, skills, Docker volume).\n\n' +
+      'The server will need to be restarted after restore.'
+    )) return;
+
+    const btn = document.getElementById('restore-btn');
+    const st  = document.getElementById('restore-status');
+    btn.disabled = true;
+    st.textContent = 'Uploading & restoring\u2026';
+
+    try {
+      const fd = new FormData();
+      fd.append('backup', file);
+      const resp = await fetch(`${apiBase()}/restore`, { method: 'POST', body: fd });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || resp.statusText);
+      st.textContent = '\u2713 Restored \u2014 restart the server to reload state.';
+      st.style.color = 'var(--green)';
+    } catch (e) {
+      st.textContent = `Error: ${e.message}`;
+      st.style.color = 'var(--red)';
+      btn.disabled = false;
+    }
+  },
+
   showNewSkillForm() {
     state.showNewSkillForm = true;
     renderSkillsList();

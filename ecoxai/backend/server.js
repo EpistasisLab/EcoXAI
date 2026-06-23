@@ -23,6 +23,7 @@ const createDatasetsRoutes = require('./routes/datasets');
 const createJobsRoutes = require('./routes/jobs');
 const createHypothesesRoutes = require('./routes/hypotheses');
 const createPipelineRoutes = require('./routes/pipeline');
+const createBackupRoutes = require('./routes/backup');
 
 // ── Error handling ────────────────────────────────────────────────────────────
 process.on('uncaughtException', (err) => {
@@ -262,6 +263,7 @@ app.use('/api', createDatasetsRoutes(routeDeps));
 app.use('/api', createJobsRoutes(routeDeps));
 app.use('/api', createHypothesesRoutes(routeDeps));
 app.use('/api', createPipelineRoutes({ orchestrator }));
+app.use('/api', createBackupRoutes({ upload }));
 
 // Health check
 app.get('/api/health', async (req, res) => {
