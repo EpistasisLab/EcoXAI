@@ -514,10 +514,10 @@ class Orchestrator extends EventEmitter {
 
     // Resume any paused hypothesis analysis queues (in-memory queue survived the pause)
     for (const [datasetId, queue] of this.hypothesisQueues.entries()) {
-      if (!queue || !queue.length) continue;
       const hasRunning = jobs.some(j => j._stageId === 'analyze' && j.datasetId === datasetId && j.status === 'running');
       if (!hasRunning) {
-        console.log(`[Orchestrator] Resume: resuming in-memory hypothesis queue for ${datasetId} (${queue.length} remaining)`);
+        const label = (queue && queue.length) ? `${queue.length} remaining` : 'cycle complete, checking regeneration';
+        console.log(`[Orchestrator] Resume: advancing hypothesis analysis for ${datasetId} (${label})`);
         await this._runNextHypothesisAnalysis(datasetId);
       }
     }
