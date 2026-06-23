@@ -1231,6 +1231,10 @@ function renderBudgetStatus() {
   if (spentEl) spentEl.textContent = `$${spent.toFixed(4)}`;
   if (barEl)   { barEl.style.width = `${pct}%`; barEl.style.background = color; }
   if (lblEl)   lblEl.textContent = `/ $${limit.toFixed(2)}`;
+  const ps = document.getElementById('pipeline-budget-spent');
+  const pl = document.getElementById('pipeline-budget-limit');
+  if (ps) ps.textContent = `$${spent.toFixed(4)}`;
+  if (pl) pl.textContent = `$${limit.toFixed(2)}`;
 }
 
 // ── App public API ─────────────────────────────────────────────────────────────

@@ -110,6 +110,7 @@ async function startJobExecution(deps, jobId, options = {}) {
           state.budget.totalCostUsd = +(((state.budget.totalCostUsd || 0) + result.totalCostUsd).toFixed(6));
           state.budget.jobCount = (state.budget.jobCount || 0) + 1;
           saveState();
+          broadcast({ type: 'BUDGET_UPDATE', budget: state.budget });
         }
 
         broadcast({ type: 'JOB_COMPLETED', jobId, exitCode: result.exitCode, artifacts: result.artifacts });

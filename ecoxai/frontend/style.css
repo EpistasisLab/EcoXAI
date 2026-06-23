@@ -150,6 +150,8 @@ html, body { height: 100%; font-family: 'Segoe UI', system-ui, sans-serif; backg
 
 /* ── Pipeline view ── */
 .pipeline-controls { display: flex; gap: 6px; margin-left: auto; }
+.pipeline-budget { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-dim); margin-left: 12px; }
+.pipeline-budget-sep { color: var(--text-dim); }
 
 .auto-badge { padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 700; }
 .auto-badge.on { background: rgba(52,211,153,0.15); color: var(--green); border: 1px solid rgba(52,211,153,0.3); }

@@ -78,6 +78,11 @@
       <div class="view-header">
         <h2>Pipeline</h2>
         <span class="auto-badge on" id="auto-badge">AUTO</span>
+        <span id="pipeline-budget-display" class="pipeline-budget">
+          <span id="pipeline-budget-spent">$0.0000</span>
+          <span class="pipeline-budget-sep">/</span>
+          <span id="pipeline-budget-limit">$10.00</span>
+        </span>
         <div class="pipeline-controls">
           <button class="btn danger" onclick="app.pausePipeline()">Pause</button>
           <button class="btn primary" onclick="app.resumePipeline()">Resume</button>
