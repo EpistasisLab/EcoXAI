@@ -37,6 +37,7 @@ function createHypothesesRoutes({ state, saveState, broadcast, dbManager }) {
         if (!h.hypothesis_text) continue;
         const confidence = typeof h.confidence_score === 'number' ? Math.max(0, Math.min(1, h.confidence_score)) : null;
         const priority = confidence !== null ? Math.floor(1000 - (confidence * 900)) : 1000;
+        const litNovelty = typeof h.lit_novelty === 'number' ? Math.max(0, Math.min(1, h.lit_novelty)) : null;
         const hypothesisId = await dbManager.createHypothesis({
           run_id: run.run_id,
           turn_number: h.turn_number || 1,
@@ -48,6 +49,7 @@ function createHypothesesRoutes({ state, saveState, broadcast, dbManager }) {
           feature_name: h.feature_name || null,
           evaluation_reasoning: h.novelty_rationale || null,
           priority,
+          lit_novelty: litNovelty,
         });
         created.push({ hypothesis_id: hypothesisId, hypothesis_text: h.hypothesis_text, hypothesis_type: h.hypothesis_type });
         // Async embed — fire-and-forget, never blocks the response

@@ -194,6 +194,33 @@ hypotheses = [
 ]
 ```
 
+#### 4b. Compute literature novelty (`lit_novelty`) for each gene
+
+For every gene-bearing hypothesis, score how **under-explored** its gene is in the
+literature, using the standalone `lit-novelty` skill bundled in your workspace.
+`lit_novelty = 1 − percentile_rank(co-mentions of gene ↔ disease across PubMed / Europe
+PMC / OpenAlex)` — **higher = less co-mentioned = more novel**. The score is RELATIVE,
+ranked over the set of genes in THIS batch.
+
+```python
+import sys
+sys.path.insert(0, "/workspace/.claude/skills/lit-novelty")
+try:
+    from lit_novelty import score_genes
+
+    genes = sorted({h.get("feature_name") for h in hypotheses if h.get("feature_name")})
+    nov = score_genes(genes, disease="Alzheimer") if genes else {}   # {gene: {"lit_novelty": ...}}
+    for h in hypotheses:
+        g = h.get("feature_name")
+        h["lit_novelty"] = nov.get(g, {}).get("lit_novelty") if g else None
+    print(f"lit_novelty scored for {len(genes)} genes")
+except Exception as e:
+    # Never block hypothesis storage if literature lookup fails — leave it unset.
+    print(f"lit_novelty skipped: {e}")
+    for h in hypotheses:
+        h.setdefault("lit_novelty", None)
+```
+
 #### 5. POST Hypotheses to Backend API
 
 ```python
@@ -206,7 +233,8 @@ payload = {
             "confidence_score": h.get("confidence_score"),
             "expected_metric": h.get("expected_metric"),
             "feature_name": h.get("feature_name"),
-            "novelty_rationale": h.get("novelty_rationale")
+            "novelty_rationale": h.get("novelty_rationale"),
+            "lit_novelty": h.get("lit_novelty")
         }
         for h in hypotheses
     ]

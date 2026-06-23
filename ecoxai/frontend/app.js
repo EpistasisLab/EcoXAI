@@ -640,6 +640,7 @@ function sortHypotheses(hyps, key) {
       case 'status':    return (a.status || '').localeCompare(b.status || '');
       case 'type':      return (a.hypothesis_type || '').localeCompare(b.hypothesis_type || '');
       case 'feature':   return (a.feature_name || '').localeCompare(b.feature_name || '');
+      case 'litnov-desc': return (b.lit_novelty ?? -1) - (a.lit_novelty ?? -1);
       case 'newest':    return (b.hypothesis_id || 0) - (a.hypothesis_id || 0);
       default: return 0;
     }
@@ -688,6 +689,9 @@ function renderHypCard(h) {
   const type = h.hypothesis_type
     ? `<span class="type-badge">${escHtml(h.hypothesis_type)}</span>`
     : '';
+  const litNov = h.lit_novelty != null
+    ? `<span class="lit-novelty" title="Literature novelty (1 − percentile of co-mentions)">lit ${(h.lit_novelty * 100).toFixed(0)}%</span>`
+    : '';
 
   let importanceHtml = '';
   if (h.actual_importance != null) {
@@ -706,7 +710,7 @@ function renderHypCard(h) {
       <div class="hyp-text">${escHtml(h.hypothesis_text)}</div>
       <div class="hyp-meta">
         <span class="status-badge ${escHtml(h.status || 'proposed')}">${escHtml(h.status || 'proposed')}</span>
-        ${conf}${type}${feat}${importanceHtml}${runningHtml}
+        ${conf}${type}${feat}${litNov}${importanceHtml}${runningHtml}
         <span style="flex:1"></span>${hint}
       </div>
     </div>`;
@@ -806,6 +810,8 @@ function renderHypDetail() {
     ? `<span class="hyp-feature">${escHtml(hyp.feature_name)}</span>` : '';
   const type = hyp.hypothesis_type
     ? `<span class="type-badge">${escHtml(hyp.hypothesis_type)}</span>` : '';
+  const litNov = hyp.lit_novelty != null
+    ? `<span class="lit-novelty" title="Literature novelty (1 − percentile of co-mentions)">lit ${(hyp.lit_novelty * 100).toFixed(0)}%</span>` : '';
 
   let importanceHtml = '';
   if (hyp.actual_importance != null) {
@@ -814,6 +820,7 @@ function renderHypDetail() {
   }
 
   let extraDetails = '';
+  if (hyp.lit_novelty != null) extraDetails += `<div class="hyp-detail-row"><strong>Literature novelty:</strong> <span>${(hyp.lit_novelty * 100).toFixed(1)}% (higher = less co-mentioned in the literature)</span></div>`;
   if (hyp.evaluation_reasoning) extraDetails += `<div class="hyp-detail-row"><strong>Reasoning:</strong> <span>${escHtml(hyp.evaluation_reasoning)}</span></div>`;
   if (hyp.expected_metric) extraDetails += `<div class="hyp-detail-row"><strong>Expected metric:</strong> <span>${escHtml(hyp.expected_metric)}</span></div>`;
   if (hyp.conclusion_text && ['supported', 'rejected', 'needs_more_data'].includes(hyp.status)) extraDetails += `<div class="hyp-detail-row"><strong>Conclusion:</strong> <span>${escHtml(hyp.conclusion_text)}</span></div>`;
@@ -859,7 +866,7 @@ function renderHypDetail() {
       <div class="detail-title" style="line-height:1.5">${escHtml(hyp.hypothesis_text)}</div>
       <div class="detail-meta" style="margin-top:8px">
         <span class="status-badge hyp-detail-status ${escHtml(hyp.status || 'proposed')}">${escHtml(hyp.status || 'proposed')}</span>
-        ${conf}${type}${feat}${importanceHtml}
+        ${conf}${type}${feat}${litNov}${importanceHtml}
       </div>
       ${extraDetails ? `<div class="hyp-expand-detail" style="margin-top:10px">${extraDetails}</div>` : ''}
     </div>

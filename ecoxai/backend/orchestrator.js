@@ -64,7 +64,7 @@ const PIPELINE_STAGES = [
     name: 'Generate Hypotheses',
     trigger: 'job_completed:explore',
     auto: true,
-    skill: ['public:pipeline-hypothesize', 'hypotheses:alzkb-graph-query'],
+    skill: ['public:pipeline-hypothesize', 'hypotheses:alzkb-graph-query', 'public:lit-novelty'],
     prompt: 'Run the hypothesis generation phase. Follow the pipeline-hypothesize skill instructions in your workspace.',
   },
   {

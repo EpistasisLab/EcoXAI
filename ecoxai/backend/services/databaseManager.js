@@ -59,6 +59,7 @@ class DatabaseManager {
       try { this.db.exec('ALTER TABLE hypotheses DROP COLUMN requested_agent_action'); } catch (_) {}
       try { this.db.exec('ALTER TABLE hypotheses DROP COLUMN parent_hypothesis_id'); } catch (_) {}
       try { this.db.exec('ALTER TABLE hypotheses ADD COLUMN conclusion_text TEXT'); } catch (_) {}
+      try { this.db.exec('ALTER TABLE hypotheses ADD COLUMN lit_novelty REAL'); } catch (_) {}
       try { this.db.exec('ALTER TABLE agent_runs DROP COLUMN sandbox_id'); } catch (_) {}
       try { this.db.exec('ALTER TABLE agent_runs DROP COLUMN permission_mode'); } catch (_) {}
 
@@ -243,18 +244,21 @@ class DatabaseManager {
       evaluation_reasoning = null,
       expected_importance = null,
       expected_metric = null, graph_source = null,
-      actual_importance = null, feature_name = null, priority = 1000
+      actual_importance = null, feature_name = null, priority = 1000,
+      lit_novelty = null
     } = data;
 
     const result = this._run(
       `INSERT INTO hypotheses (
          run_id, turn_number, hypothesis_text, hypothesis_type, confidence_score,
          extracted_at, status, evaluation_reasoning,
-         expected_importance, expected_metric, graph_source, actual_importance, feature_name, priority
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         expected_importance, expected_metric, graph_source, actual_importance, feature_name, priority,
+         lit_novelty
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [run_id, turn_number, hypothesis_text, hypothesis_type, confidence_score,
         extracted_at, status, evaluation_reasoning,
-        expected_importance, expected_metric, graph_source, actual_importance, feature_name, priority]
+        expected_importance, expected_metric, graph_source, actual_importance, feature_name, priority,
+        lit_novelty]
     );
     return result.lastID;
   }
@@ -262,7 +266,7 @@ class DatabaseManager {
   async updateHypothesis(hypothesisId, updates) {
     const allowedFields = [
       'status', 'confidence_score', 'evaluation_reasoning', 'priority',
-      'actual_importance', 'feature_name', 'conclusion_text'
+      'actual_importance', 'feature_name', 'conclusion_text', 'lit_novelty'
     ];
 
     const fields = [];

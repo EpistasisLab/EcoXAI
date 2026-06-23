@@ -132,6 +132,7 @@ CREATE TABLE IF NOT EXISTS hypotheses (
     feature_name TEXT,
     priority INTEGER DEFAULT 1000,
     conclusion_text TEXT,
+    lit_novelty REAL,
     FOREIGN KEY (run_id) REFERENCES agent_runs(run_id) ON DELETE CASCADE
 );
 
