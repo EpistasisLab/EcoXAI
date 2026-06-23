@@ -27,6 +27,7 @@ class WikiService {
     this.anthropic = null;
     this.model = null;
     this._initClient();
+    this._probeLLM().catch(() => {});
   }
 
   _initClient() {
@@ -63,6 +64,22 @@ class WikiService {
       this.model = process.env.CLAUDE_MODEL || process.env.ANTHROPIC_DEFAULT_SONNET_MODEL || 'claude-sonnet-4-6';
     } catch (e) {
       console.warn('[Wiki] Failed to init Anthropic client:', e.message);
+    }
+  }
+
+  async _probeLLM() {
+    const baseUrl = process.env.ANTHROPIC_BASE_URL || '';
+    if (!baseUrl.includes('localhost') && !baseUrl.includes('127.0.0.1')) return;
+    if (!this.anthropic) return;
+    try {
+      await this.anthropic.messages.create({
+        model: this.model,
+        max_tokens: 1,
+        messages: [{ role: 'user', content: 'ping' }],
+      });
+      console.log(`[Wiki] Local LLM reachable at ${baseUrl} (model: ${this.model})`);
+    } catch (err) {
+      console.warn(`[Wiki] Local LLM at ${baseUrl} is NOT reachable: ${err.message}`);
     }
   }
 

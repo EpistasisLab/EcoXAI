@@ -30,7 +30,7 @@ async function startJobExecution(deps, jobId, options = {}) {
   }
 
   const hasFoundryConfig = process.env.CLAUDE_CODE_USE_FOUNDRY === '1' && process.env.ANTHROPIC_FOUNDRY_API_KEY;
-  const hasDirectConfig = process.env.ANTHROPIC_API_KEY;
+  const hasDirectConfig = process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_BASE_URL;
   if (!hasFoundryConfig && !hasDirectConfig) {
     return { success: false, error: 'API key not configured. Set ANTHROPIC_API_KEY or Azure Foundry variables.', status: 500 };
   }
@@ -150,10 +150,16 @@ async function startJobExecution(deps, jobId, options = {}) {
           }
 
           wikiService.fileDiscovery(datasetId, completedJob.id, completedJob.title, reportContent, featureData)
-            .then(() => volumeManager.readDatasetContext(datasetId))
-            .then(ctx => wikiService.refreshPortrait(datasetId, datasetMeta, ctx))
-            .then(() => broadcast({ type: 'WIKI_UPDATE', datasetId }))
-            .catch(err => console.warn(`[Wiki] Update failed:`, err.message));
+            .then(() => {
+              // Always broadcast after discovery so the frontend sees the new insights
+              broadcast({ type: 'WIKI_UPDATE', datasetId });
+              // Then attempt to refresh the portrait — failures here are non-fatal
+              return volumeManager.readDatasetContext(datasetId)
+                .then(ctx => wikiService.refreshPortrait(datasetId, datasetMeta, ctx))
+                .then(() => broadcast({ type: 'WIKI_UPDATE', datasetId }))
+                .catch(err => console.warn(`[Wiki] Portrait refresh failed:`, err.message));
+            })
+            .catch(err => console.warn(`[Wiki] Discovery failed:`, err.message));
         }
       },
       (error) => {

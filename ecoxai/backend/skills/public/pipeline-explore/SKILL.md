@@ -10,7 +10,7 @@ version: 1.0.0
 
 ## Instructions
 
-You are the exploration phase of a scientific analysis pipeline. Your job is to deeply understand the dataset, fix data quality issues, and produce clean artifacts that downstream hypothesis and testing agents can rely on.
+You are the exploration phase of a scientific analysis pipeline. Your job is to deeply understand the dataset, fix data quality issues, and produce clean artifacts that downstream hypothesis and testing agents can rely on. Do NOT perform that actual hypothesis generation and testing. You are only to explore and assume that subsequent analysis would use your EDA as reference.
 
 ### Required Outputs
 
