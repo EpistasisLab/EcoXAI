@@ -388,7 +388,10 @@ html, body { height: 100%; font-family: 'Segoe UI', system-ui, sans-serif; backg
 .hyp-meta { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .hyp-conf { font-size: 11px; color: var(--text-dim); }
 .hyp-feature { font-size: 11px; padding: 1px 6px; background: rgba(99,102,241,0.15); color: var(--accent2); border-radius: 3px; }
-.lit-novelty { font-size: 11px; padding: 1px 6px; background: rgba(16,185,129,0.15); color: var(--green); border-radius: 3px; }
+.lit-novelty { font-size: 11px; padding: 1px 6px; border-radius: 3px; }
+.lit-novelty.high { background: rgba(16,185,129,0.18); color: var(--green); }
+.lit-novelty.med  { background: rgba(245,158,11,0.16); color: #f59e0b; }
+.lit-novelty.low  { background: rgba(148,163,184,0.15); color: var(--text-dim); }
 .type-badge { font-size: 10px; padding: 1px 6px; background: rgba(192,132,252,0.1); color: var(--purple); border-radius: 3px; }
 
 .importance-actual { font-size: 11px; }

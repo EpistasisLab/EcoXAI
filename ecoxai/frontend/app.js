@@ -674,6 +674,22 @@ function renderGrouped(hyps, groupKey) {
     </div>`).join('');
 }
 
+// Literature-novelty badge: qualitative band + colour + the raw score.
+// lit_novelty is a relative score in [0,1] (1 − percentile of gene↔disease co-mentions).
+function litNovBadge(v) {
+  if (v == null) return '';
+  const band = v >= 0.67 ? 'high' : v >= 0.34 ? 'med' : 'low';
+  const tip =
+    `Relative literature novelty = ${v.toFixed(2)} (relative within this hypothesis batch)\n` +
+    `Definition: lit_novelty = 1 − percentile_rank of how often this gene is co-mentioned ` +
+    `with the disease across PubMed, Europe PMC and OpenAlex.\n` +
+    `Range 0–1, computed RELATIVE to the genes in this hypothesis batch. ` +
+    `Higher = co-mentioned less = less-studied = more novel. ` +
+    `${v.toFixed(2)} means more novel than ~${Math.round(v * 100)}% of the batch's genes.\n` +
+    `Band: low (<0.34) · med (0.34–0.66) · high (≥0.67). It is NOT a confidence or probability.`;
+  return `<span class="lit-novelty ${band}" title="${tip.replace(/"/g, '&quot;')}">rel-novelty ${band} ${v.toFixed(2)}</span>`;
+}
+
 function renderHypCard(h) {
   const id = h.hypothesis_id;
   const selected = state.selectedHypId === id ? ' selected' : '';
@@ -689,9 +705,7 @@ function renderHypCard(h) {
   const type = h.hypothesis_type
     ? `<span class="type-badge">${escHtml(h.hypothesis_type)}</span>`
     : '';
-  const litNov = h.lit_novelty != null
-    ? `<span class="lit-novelty" title="Literature novelty (1 − percentile of co-mentions)">lit ${(h.lit_novelty * 100).toFixed(0)}%</span>`
-    : '';
+  const litNov = litNovBadge(h.lit_novelty);
 
   let importanceHtml = '';
   if (h.actual_importance != null) {
@@ -810,8 +824,7 @@ function renderHypDetail() {
     ? `<span class="hyp-feature">${escHtml(hyp.feature_name)}</span>` : '';
   const type = hyp.hypothesis_type
     ? `<span class="type-badge">${escHtml(hyp.hypothesis_type)}</span>` : '';
-  const litNov = hyp.lit_novelty != null
-    ? `<span class="lit-novelty" title="Literature novelty (1 − percentile of co-mentions)">lit ${(hyp.lit_novelty * 100).toFixed(0)}%</span>` : '';
+  const litNov = litNovBadge(hyp.lit_novelty);
 
   let importanceHtml = '';
   if (hyp.actual_importance != null) {
@@ -820,7 +833,7 @@ function renderHypDetail() {
   }
 
   let extraDetails = '';
-  if (hyp.lit_novelty != null) extraDetails += `<div class="hyp-detail-row"><strong>Literature novelty:</strong> <span>${(hyp.lit_novelty * 100).toFixed(1)}% (higher = less co-mentioned in the literature)</span></div>`;
+  if (hyp.lit_novelty != null) { const b = hyp.lit_novelty >= 0.67 ? 'high' : hyp.lit_novelty >= 0.34 ? 'med' : 'low'; extraDetails += `<div class="hyp-detail-row"><strong>Relative literature novelty:</strong> <span>${b} — ${hyp.lit_novelty.toFixed(2)} (relative within this batch; higher = less co-mentioned with the disease in the literature)</span></div>`; }
   if (hyp.evaluation_reasoning) extraDetails += `<div class="hyp-detail-row"><strong>Reasoning:</strong> <span>${escHtml(hyp.evaluation_reasoning)}</span></div>`;
   if (hyp.expected_metric) extraDetails += `<div class="hyp-detail-row"><strong>Expected metric:</strong> <span>${escHtml(hyp.expected_metric)}</span></div>`;
   if (hyp.conclusion_text && ['supported', 'rejected', 'needs_more_data'].includes(hyp.status)) extraDetails += `<div class="hyp-detail-row"><strong>Conclusion:</strong> <span>${escHtml(hyp.conclusion_text)}</span></div>`;
