@@ -137,6 +137,14 @@ const CONTAINER_CONFIG = {
 const DATASETS_VOLUME = 'ecoxai-datasets';
 const WORKSPACE_PREFIX = 'ecoxai-workspace-';
 
+/** Rewrite loopback URLs so agent containers can reach services on the Docker host (Linux). */
+function containerReachableUrl(url) {
+  if (!url) return url;
+  return url
+    .replace(/localhost/g, 'host.docker.internal')
+    .replace(/127\.0\.0\.1/g, 'host.docker.internal');
+}
+
 class ContainerManager {
   constructor() {
     this.activeContainers = new Map();
@@ -168,6 +176,7 @@ class ContainerManager {
       const envVars = [
         `TASK=${enhancedPrompt}`,
         `JOB_ID=${id}`,
+        `RUN_ID=${runId}`,
         `DATASET_ID=${datasetId || ''}`,
         `BACKEND_URL=http://host.docker.internal:${backendPort}`,
       ];
@@ -203,11 +212,7 @@ class ContainerManager {
       } else {
         envVars.push(`ANTHROPIC_API_KEY=${process.env.ANTHROPIC_API_KEY}`);
         if (process.env.ANTHROPIC_BASE_URL) {
-          // Translate localhost -> host.docker.internal so the container can reach the host
-          const containerBaseUrl = process.env.ANTHROPIC_BASE_URL.replace(
-            /localhost/g, 'host.docker.internal'
-          );
-          envVars.push(`ANTHROPIC_BASE_URL=${containerBaseUrl}`);
+          envVars.push(`ANTHROPIC_BASE_URL=${containerReachableUrl(process.env.ANTHROPIC_BASE_URL)}`);
         }
       }
       if (process.env.CLAUDE_MODEL) envVars.push(`CLAUDE_MODEL=${process.env.CLAUDE_MODEL}`);
@@ -229,6 +234,7 @@ class ContainerManager {
           Memory: memoryBytes,
           CpuShares: CONTAINER_CONFIG.CPU_SHARES,
           AutoRemove: false,
+          ExtraHosts: ['host.docker.internal:host-gateway'],
         },
         Tty: false,
         AttachStdout: true,

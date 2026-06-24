@@ -10,10 +10,10 @@ version: 2.0.0
 
 ## Instructions
 
-You are the hypothesis generation phase of a scientific analysis pipeline. Your goal is to generate **diverse, novel, falsifiable** scientific hypotheses about the dataset, but your job is to not directly test them as that would be handled by other agents. Hypotheses are stored directly in the hypothesis database via the backend API — no files are written.
+You are the hypothesis generation phase of a scientific analysis pipeline. Your goal is to generate **diverse, novel, falsifiable** scientific hypotheses about the dataset, but your job is to not directly test them as that would be handled by other agents. Hypotheses are stored directly in the hypothesis database via the backend API — no files are written. Once the hypotheses are stored, terminate and do not proceed with per-hypothesis analysis.
 
 Before generating anything, you must:
-1. If there is a research question in the task.txt that the user wants, that is the direction of all hypotheses. Diversity of hypotheses is important, but it should be ALWAYS towards the direction to solve the research question.
+1. If there is a research question in the task.txt that the user wants, that is the direction of all hypotheses. Diversity of hypotheses is important, but it should be ALWAYS towards the direction to solve the research question. Do not actually perform the hypothesis.
 2. View the EDA report (in /workspace/exploration_report.md) for dataset context.
 3. Load the dataset for full context
 4. **Query existing hypotheses** from the API — do not regenerate what already exists
@@ -59,9 +59,14 @@ import numpy as np
 dataset_id = os.environ.get('DATASET_ID', '')
 domain = os.environ.get('DATASET_DOMAIN', 'unknown')
 backend_url = os.environ.get('BACKEND_URL', 'http://host.docker.internal:8081')
+# CRITICAL: use JOB_ID and RUN_ID exactly as provided — do NOT query the pipeline API to "resolve" them
 job_id = os.environ.get('JOB_ID', '')
+run_id = os.environ.get('RUN_ID', '')
 
-print(f"Domain: {domain}, Job: {job_id}")
+if not job_id:
+    raise RuntimeError("JOB_ID env var is not set — cannot store hypotheses without a valid job_id")
+
+print(f"Domain: {domain}, Job: {job_id}, Run: {run_id}")
 
 # Load cleaned data
 df = pd.read_csv(f'/datasets/{dataset_id}/cleaned/data.feather')
@@ -197,8 +202,11 @@ hypotheses = [
 #### 5. POST Hypotheses to Backend API
 
 ```python
+import time
+
 payload = {
     "job_id": job_id,
+    "run_id": run_id or None,  # direct run_id bypasses the fragile getRunByJobId lookup
     "hypotheses": [
         {
             "hypothesis_text": h["hypothesis_text"],
@@ -212,16 +220,34 @@ payload = {
     ]
 }
 
-try:
-    result = requests.post(f'{backend_url}/api/hypotheses', json=payload, timeout=15)
-    result.raise_for_status()
-    created = result.json().get('created', [])
-    print(f"Stored {len(created)} hypotheses via API")
-    for h in created:
-        print(f"  [{h['hypothesis_type']}] {h['hypothesis_text'][:80]}")
-except Exception as e:
-    print(f"ERROR: Failed to store hypotheses: {e}")
-    raise
+last_err = None
+for attempt in range(1, 4):
+    try:
+        result = requests.post(f'{backend_url}/api/hypotheses', json=payload, timeout=15)
+        result.raise_for_status()
+        resp_json = result.json()
+        if not resp_json.get('success'):
+            raise RuntimeError(f"API returned success=false: {resp_json}")
+        created = resp_json.get('created', [])
+        # Count MUST come from the API response, not the local list
+        print(f"Stored {len(created)} hypotheses via API (attempt {attempt})")
+        for h in created:
+            print(f"  [{h.get('hypothesis_type', '?')}] {h.get('hypothesis_text', '')[:80]}")
+        if len(created) == 0:
+            raise RuntimeError("API returned 0 created hypotheses — check backend logs for errors")
+        break
+    except Exception as e:
+        last_err = e
+        print(f"Attempt {attempt}/3 failed: {e}")
+        if attempt < 3:
+            time.sleep(5)
+else:
+    # Save payload locally so it can be manually submitted
+    os.makedirs('/workspace/output', exist_ok=True)
+    with open('/workspace/output/hypotheses_payload.json', 'w') as f:
+        json.dump(payload, f, indent=2)
+    print(f"ERROR: All 3 attempts failed. Payload saved to /workspace/output/hypotheses_payload.json")
+    raise last_err
 ```
 
 #### 6. Write Interesting Hypotheses to report.md

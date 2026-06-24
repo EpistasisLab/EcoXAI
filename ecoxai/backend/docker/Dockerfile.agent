@@ -58,7 +58,8 @@ RUN pip install --no-cache-dir \
     pyodbc \
     requests \
     openai \
-    python-dotenv
+    python-dotenv \
+    xgboost
 
 # Create non-root user for running Claude Code
 RUN useradd -m -u 1000 -s /bin/bash claude && \

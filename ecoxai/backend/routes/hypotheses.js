@@ -22,15 +22,28 @@ function createHypothesesRoutes({ state, saveState, broadcast, dbManager }) {
   // POST /api/hypotheses - Batch create hypotheses (called by pipeline-hypothesize agent)
   router.post('/hypotheses', async (req, res) => {
     try {
-      const { job_id, hypotheses } = req.body;
+      const { job_id, run_id: runIdFromBody, hypotheses } = req.body;
+      console.log(`[hypotheses] POST received — job_id=${job_id} run_id=${runIdFromBody || '(none)'} count=${Array.isArray(hypotheses) ? hypotheses.length : 'invalid'}`);
+
       if (!job_id || !Array.isArray(hypotheses) || hypotheses.length === 0) {
+        console.warn(`[hypotheses] POST rejected — bad payload`);
         return res.status(400).json({ success: false, error: 'job_id and a non-empty hypotheses array are required' });
       }
 
-      const run = dbManager.getRunByJobId(job_id);
+      // Prefer run_id passed directly (avoids fragile job_id lookup when DB is warm but under load)
+      let run;
+      if (runIdFromBody) {
+        run = await dbManager.getRun(runIdFromBody);
+        if (!run) console.warn(`[hypotheses] run_id=${runIdFromBody} not found in DB, falling back to job_id lookup`);
+      }
       if (!run) {
+        run = dbManager.getRunByJobId(job_id);
+      }
+      if (!run) {
+        console.warn(`[hypotheses] POST rejected — no agent_run found for job_id=${job_id}`);
         return res.status(404).json({ success: false, error: `No run found for job_id ${job_id}` });
       }
+      console.log(`[hypotheses] Resolved run_id=${run.run_id} for job_id=${job_id}`);
 
       const created = [];
       for (const h of hypotheses) {
@@ -50,6 +63,7 @@ function createHypothesesRoutes({ state, saveState, broadcast, dbManager }) {
           priority,
         });
         created.push({ hypothesis_id: hypothesisId, hypothesis_text: h.hypothesis_text, hypothesis_type: h.hypothesis_type });
+        console.log(`[hypotheses] Stored #${hypothesisId} [${h.hypothesis_type || 'unknown'}] ${(h.hypothesis_text || '').slice(0, 80)}`);
         // Async embed — fire-and-forget, never blocks the response
         const textToEmbed = h.hypothesis_text;
         const idToEmbed = hypothesisId;
@@ -61,6 +75,7 @@ function createHypothesesRoutes({ state, saveState, broadcast, dbManager }) {
         });
       }
 
+      console.log(`[hypotheses] POST complete — stored ${created.length} hypotheses for run_id=${run.run_id}`);
       broadcast({ type: 'DATABASE_UPDATE', entity: 'hypotheses', jobId: job_id });
       res.json({ success: true, created });
     } catch (error) {

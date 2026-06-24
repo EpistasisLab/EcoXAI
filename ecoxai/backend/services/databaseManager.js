@@ -290,7 +290,7 @@ class DatabaseManager {
   }
 
   getRunByJobId(jobId) {
-    return this._get('SELECT run_id FROM agent_runs WHERE job_id = ? LIMIT 1', [jobId]);
+    return this._get('SELECT run_id FROM agent_runs WHERE job_id = ? ORDER BY started_at DESC LIMIT 1', [jobId]);
   }
 
   countHypothesesForRun(runId) {
