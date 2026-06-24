@@ -188,3 +188,6 @@ ecoxai/backend/node_modules/
 ecoxai/backend/data/state.json
 
 CLAUDE.md
+ecoxai/backend/skills-git/
+ecoxai/backend/data/*.bak-*
+**/.lit_cache.json
