@@ -5,7 +5,7 @@ when: use when running the hypothesis generation phase after dataset exploration
 visibility: public
 tags: [pipeline, hypothesize, hypothesis, alzkb, diversity, novelty]
 author: system
-version: 2.0.0
+version: 2.2.0
 ---
 
 ## Instructions
@@ -220,6 +220,34 @@ except Exception as e:
     for h in hypotheses:
         h.setdefault("lit_novelty", None)
 ```
+
+#### 4c. Duplicate check at generation time (BEFORE posting)
+
+Catch duplicates **as you generate** — against (a) already-stored hypotheses and (b) the
+other candidates in this batch — using **two layers**: exact match (certain) then cosine
+similarity (semantic). Drop duplicates and regenerate until you have 6–10 **distinct** ones.
+
+The dedup logic is a bundled standalone skill (`public:hypothesis-dedup`) — just import and call it:
+
+```python
+import sys
+sys.path.insert(0, "/workspace/.claude/skills/hypothesis-dedup")
+from dedup import dedupe   # exact match + cosine similarity (vs existing + in-batch)
+
+res = dedupe(hypotheses, existing_texts, backend_url, threshold=0.85)
+for d in res["dropped"]:
+    print(f"  [dup:{d['reason']} {d['similarity']}] {d['text'][:70]}")
+hypotheses = res["kept"]
+print(f"After dedup: {len(hypotheses)} distinct hypotheses")
+```
+
+**If fewer than 6 remain**, generate additional hypotheses that test a **different feature
+or mechanism** (not a reworded version of anything kept/existing) and **re-run this 4c
+check**, looping until 6–10 distinct hypotheses remain. Only then proceed to POST.
+
+> Note: the `/similar` index only covers *already-stored* hypotheses (embedding is async),
+> so within-batch duplicates are caught by Layer 1 (exact) + your own judgment that no two
+> candidates test the same feature+mechanism.
 
 #### 5. POST Hypotheses to Backend API
 

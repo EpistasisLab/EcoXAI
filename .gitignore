@@ -191,3 +191,6 @@ CLAUDE.md
 ecoxai/backend/skills-git/
 ecoxai/backend/data/*.bak-*
 **/.lit_cache.json
+__pycache__/
+*.pyc
+.pytest_cache/
