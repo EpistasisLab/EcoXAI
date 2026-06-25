@@ -506,6 +506,8 @@ class Orchestrator extends EventEmitter {
       if (stageIdx < 0 || stageIdx >= PIPELINE_STAGES.length - 1) continue;
       const nextStage = PIPELINE_STAGES[stageIdx + 1];
       if (nextStage.noJob) continue;
+      // Skip stages that require special context (e.g. analyze needs a hypothesis from hypotheses_extracted)
+      if (nextStage.trigger !== `job_completed:${job._stageId}`) continue;
 
       const alreadyStarted = jobs.some(j => j._stageId === nextStage.id && j.datasetId === datasetId);
       if (!alreadyStarted) {
@@ -523,7 +525,7 @@ class Orchestrator extends EventEmitter {
 
     // Resume any paused hypothesis analysis queues (in-memory queue survived the pause)
     for (const [datasetId, queue] of this.hypothesisQueues.entries()) {
-      const hasRunning = jobs.some(j => j._stageId === 'analyze' && j.datasetId === datasetId && j.status === 'running');
+      const hasRunning = jobs.some(j => j._stageId === 'analyze' && j.datasetId === datasetId && j.status === 'in-progress');
       if (!hasRunning) {
         const label = (queue && queue.length) ? `${queue.length} remaining` : 'cycle complete, checking regeneration';
         console.log(`[Orchestrator] Resume: advancing hypothesis analysis for ${datasetId} (${label})`);
@@ -538,7 +540,7 @@ class Orchestrator extends EventEmitter {
       )];
       for (const datasetId of datasetsWithHypothesizeComplete) {
         if (this.hypothesisQueues.has(datasetId)) continue; // already handled above
-        const hasRunning = jobs.some(j => j._stageId === 'analyze' && j.datasetId === datasetId && j.status === 'running');
+        const hasRunning = jobs.some(j => j._stageId === 'analyze' && j.datasetId === datasetId && j.status === 'in-progress');
         if (hasRunning) continue;
         const allHypotheses = await this.deps.dbManager.getHypothesesForDataset(datasetId);
         const untested = allHypotheses.filter(h => h.status === 'proposed');

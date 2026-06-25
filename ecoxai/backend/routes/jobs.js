@@ -38,6 +38,26 @@ function createJobsRoutes({ state, saveState, broadcast, findJob, updateJob, con
     }
   });
 
+  router.delete('/jobs/:id', async (req, res) => {
+    const job = findJob(req.params.id);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+
+    // Stop container if running
+    if (job.status === 'in-progress') {
+      await containerManager.stopJob(req.params.id).catch(() => {});
+    }
+
+    // Always attempt volume cleanup (silently ignores missing volumes)
+    volumeManager.deleteWorkspaceVolume(req.params.id)
+      .catch(err => console.warn(`[Volume] Cleanup failed for ${req.params.id}:`, err.message));
+
+    // Remove from state
+    state.jobs = state.jobs.filter(j => j.id !== req.params.id);
+    saveState();
+    broadcast({ type: 'JOB_UPDATE', jobs: state.jobs });
+    res.json({ success: true });
+  });
+
   router.get('/jobs/:id/artifacts', async (req, res) => {
     const job = findJob(req.params.id);
     if (!job) return res.status(404).json({ error: 'Job not found' });

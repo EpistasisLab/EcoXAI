@@ -81,7 +81,19 @@ function connectWS() {
 function handleMessage(msg) {
   switch (msg.type) {
     case 'FULL_STATE':
-      if (msg.jobs)     state.jobs     = msg.jobs;
+      if (msg.jobs) {
+        state.jobs = msg.jobs;
+        // Rebuild stageStatuses so running jobs survive a page refresh
+        for (const job of state.jobs) {
+          if (!job._stageId) continue;
+          const mappedStatus = job.status === 'in-progress' ? 'running' : job.status;
+          const existing = stageStatuses[job._stageId];
+          // in-progress always wins; otherwise latest job overwrites unless current winner is running
+          if (!existing || job.status === 'in-progress' || existing.status !== 'running') {
+            stageStatuses[job._stageId] = { status: mappedStatus, jobId: job.id, datasetId: job.datasetId || null };
+          }
+        }
+      }
       if (msg.datasets) state.datasets = msg.datasets;
       if (msg.pipeline) { state.pipeline = msg.pipeline; renderPipeline(); }
       if (msg.budget)   { state.serverBudget = msg.budget; renderBudgetStatus(); }
@@ -298,7 +310,14 @@ function renderPipeline() {
   list.innerHTML = stages.map(stage => {
     const ss = stageStatuses[stage.id];
     const status = ss?.status || 'idle';
-    const icon = { running: '⚡', completed: '✓', failed: '✗', waiting: '⏸', retrying: '↩', idle: '○' }[status] || '○';
+    const icon = {
+      running:   '<span class="stage-spinner"></span>',
+      retrying:  '<span class="stage-spinner"></span>',
+      completed: '<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="var(--green)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="2,6 5,9 10,3"/></svg>',
+      failed:    '<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="var(--red)" stroke-width="2" stroke-linecap="round"><line x1="2" y1="2" x2="10" y2="10"/><line x1="10" y1="2" x2="2" y2="10"/></svg>',
+      waiting:   '<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="var(--blue)" stroke-width="1.8" stroke-linecap="round"><circle cx="6" cy="6" r="4.5"/><polyline points="6,3.5 6,6 7.5,7.5"/></svg>',
+      idle:      '<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="var(--text-dim)" stroke-width="1.5"><circle cx="6" cy="6" r="4.5"/></svg>',
+    }[status] || '<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="var(--text-dim)" stroke-width="1.5"><circle cx="6" cy="6" r="4.5"/></svg>';
     const selectedStage = state.selectedStageId === stage.id ? ' selected' : '';
 
     const skills = Array.isArray(stage.skill) ? stage.skill : [];
@@ -319,6 +338,10 @@ function renderPipeline() {
             <span class="stage-job-status">${escHtml(j.status)}</span>
             ${cost}${turns}
             <span class="stage-job-id">${escHtml(j.id)}</span>
+            <span class="stage-job-actions">
+              ${j.status === 'in-progress' ? `<button class="job-action-btn stop" title="Stop" onclick="event.stopPropagation();app.cancelJob('${j.id}')"><svg width='9' height='9' viewBox='0 0 9 9' fill='currentColor' style='display:block'><rect width='9' height='9' rx='1.5'/></svg></button>` : ''}
+              <button class="job-action-btn delete" title="Delete" onclick="event.stopPropagation();app.deleteJob('${j.id}')"><svg width='9' height='9' viewBox='0 0 9 9' fill='none' stroke='currentColor' stroke-width='1.8' stroke-linecap='round' style='display:block'><line x1='1' y1='1' x2='8' y2='8'/><line x1='8' y1='1' x2='1' y2='8'/></svg></button>
+            </span>
           </div>`;
         }).join('')}
       </div>`;
@@ -407,6 +430,8 @@ function renderJobDetail(jobId) {
       <div class="detail-meta">
         <span class="status-badge ${escHtml(job.status || 'unknown')}">${escHtml(job.status || 'unknown')}</span>
         ${cost}${turns}
+        ${job.status === 'in-progress' ? `<button class="btn" style="padding:2px 8px;font-size:11px;display:inline-flex;align-items:center;gap:4px" onclick="app.cancelJob('${job.id}')"><svg width='9' height='9' viewBox='0 0 9 9' fill='currentColor'><rect width='9' height='9' rx='1.5'/></svg>Stop</button>` : ''}
+        <button class="btn danger" style="padding:2px 8px;font-size:11px;display:inline-flex;align-items:center;gap:4px" onclick="app.deleteJob('${job.id}')"><svg width='10' height='11' viewBox='0 0 10 11' fill='none' stroke='currentColor' stroke-width='1.3' stroke-linecap='round' stroke-linejoin='round'><path d='M1.5 3h7M3.5 3V2a.5.5 0 0 1 .5-.5h2a.5.5 0 0 1 .5.5v1M2.5 3l.5 6a.5.5 0 0 0 .5.5h3a.5.5 0 0 0 .5-.5l.5-6'/></svg>Delete</button>
       </div>
     </div>
     <div class="detail-tabs">
@@ -1428,6 +1453,23 @@ window.app = {
     } catch (e) {
       alert('Save failed: ' + e.message);
     }
+  },
+
+  async cancelJob(jobId) {
+    await fetch(`${apiBase()}/jobs/${jobId}/stop`, { method: 'POST' });
+    // State updates arrive via WebSocket JOB_STOPPED / JOB_UPDATE
+  },
+
+  async deleteJob(jobId) {
+    if (!confirm('Delete this job? This cannot be undone.')) return;
+    await fetch(`${apiBase()}/jobs/${jobId}`, { method: 'DELETE' });
+    if (state.selectedJobId === jobId) {
+      state.selectedJobId = null;
+      state.selectedAssetFile = null;
+      document.getElementById('pipeline-detail').innerHTML =
+        `<div class="detail-empty"><div style="font-size:32px;margin-bottom:8px">⚡</div><p>Select a job or stage to view details</p></div>`;
+    }
+    // state.jobs update arrives via WebSocket JOB_UPDATE
   },
 
   selectDetailTab(tab) {
