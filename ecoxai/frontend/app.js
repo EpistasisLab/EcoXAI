@@ -910,6 +910,11 @@ function renderHypDetail() {
       <div class="detail-meta" style="margin-top:8px">
         <span class="status-badge hyp-detail-status ${escHtml(hyp.status || 'proposed')}">${escHtml(hyp.status || 'proposed')}</span>
         ${conf}${type}${feat}${importanceHtml}
+        <span style="flex:1"></span>
+        <button class="hyp-icon-btn" onclick="app.downloadHypPdf(${hyp.hypothesis_id})" title="Download as PDF">
+          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+          <span>PDF</span>
+        </button>
       </div>
       ${extraDetails ? `<div class="hyp-expand-detail" style="margin-top:10px">${extraDetails}</div>` : ''}
     </div>
@@ -1533,6 +1538,94 @@ window.app = {
     if (el) el.classList.toggle('collapsed');
   },
 
+  async downloadHypPdf(hypId) {
+    const hyp = state.hypotheses.find(h => h.hypothesis_id === hypId);
+    if (!hyp) return;
+    const job = findHypTestJob(hyp);
+
+    // Show loading state on button
+    const btn = document.querySelector(`button[onclick="app.downloadHypPdf(${hypId})"]`);
+    if (btn) { btn.disabled = true; btn.querySelector('span').textContent = 'Generating…'; }
+
+    try {
+      // Build markdown: hypothesis metadata header
+      let md = `# ${hyp.hypothesis_text}\n\n`;
+      md += `**Status:** ${hyp.status || 'proposed'}  \n`;
+      if (hyp.confidence_score != null) md += `**Confidence:** ${(hyp.confidence_score * 100).toFixed(0)}%  \n`;
+      if (hyp.hypothesis_type) md += `**Type:** ${hyp.hypothesis_type}  \n`;
+      if (hyp.feature_name)    md += `**Feature:** ${hyp.feature_name}  \n`;
+      if (hyp.evaluation_reasoning) md += `\n**Reasoning:** ${hyp.evaluation_reasoning}\n`;
+      if (hyp.conclusion_text) md += `\n**Conclusion:** ${hyp.conclusion_text}\n`;
+
+      // Fetch all .md artifacts from the test job (report.md first)
+      if (job) {
+        const names = (job.artifacts || [])
+          .map(a => typeof a === 'string' ? a : (a.name || a.path || ''))
+          .filter(n => n.endsWith('.md'));
+        const ordered = [
+          ...names.filter(n => n === 'report.md'),
+          ...names.filter(n => n !== 'report.md'),
+        ];
+        for (const filename of ordered) {
+          try {
+            const resp = await fetch(`${apiBase()}/jobs/${job.id}/artifacts/${encodeURIComponent(filename)}`);
+            if (!resp.ok) continue;
+            const text = await resp.text();
+            md += `\n\n---\n\n${text}`;
+          } catch {}
+        }
+      }
+
+      // Replace relative image references with full API URLs before parsing
+      let processedMd = md;
+      if (job) {
+        processedMd = md.replace(
+          /!\[([^\]]*)\]\((?!data:|https?:\/\/)([^)]+)\)/g,
+          (_, alt, src) => `![${alt}](${apiBase()}/jobs/${job.id}/artifacts/${encodeURIComponent(src.trim())})`
+        );
+      }
+
+      // Pre-fetch images referenced in the markdown and replace with base64 data URLs
+      // so pdfMake can embed them as real images in the text PDF
+      const imgRefs = [...processedMd.matchAll(/!\[[^\]]*\]\(((?!data:)[^)]+)\)/g)].map(m => m[1].trim());
+      const base64Map = {};
+      await Promise.all([...new Set(imgRefs)].map(async src => {
+        try {
+          const url = /^https?:\/\//.test(src) ? src : `${apiBase()}/jobs/${job ? job.id : ''}/artifacts/${encodeURIComponent(src)}`;
+          const resp = await fetch(url);
+          if (!resp.ok) return;
+          const blob = await resp.blob();
+          base64Map[src] = await new Promise(resolve => {
+            const r = new FileReader(); r.onload = () => resolve(r.result); r.readAsDataURL(blob);
+          });
+        } catch {}
+      }));
+      const resolvedMd = processedMd.replace(/!\[([^\]]*)\]\(((?!data:)[^)]+)\)/g, (_, alt, src) =>
+        base64Map[src.trim()] ? `![${alt}](${base64Map[src.trim()]})` : `![${alt}](${src})`
+      );
+
+      const content = mdToPdfContent(resolvedMd);
+
+      const slug = hyp.hypothesis_text.replace(/[^a-z0-9]+/gi, '_').slice(0, 60).toLowerCase();
+      pdfMake.createPdf({
+        content,
+        defaultStyle: { fontSize: 11, lineHeight: 1.5 },
+        styles: {
+          'html-h1': { fontSize: 20, bold: true, marginBottom: 8, marginTop: 16 },
+          'html-h2': { fontSize: 16, bold: true, marginBottom: 6, marginTop: 14 },
+          'html-h3': { fontSize: 13, bold: true, marginBottom: 4, marginTop: 12 },
+          'html-h4': { fontSize: 11, bold: true, marginBottom: 4, marginTop: 10 },
+          'html-pre': { fontSize: 9, lineHeight: 1.3 },
+          'html-code': { fontSize: 9 },
+        },
+        pageMargins: [50, 50, 50, 50],
+        pageSize: 'A4',
+      }).download(`hypothesis_${hypId}_${slug}.pdf`);
+    } finally {
+      if (btn) { btn.disabled = false; btn.querySelector('span').textContent = 'PDF'; }
+    }
+  },
+
   async saveSettings() {
     const prevHost = settings.host;
     settings = {
@@ -1761,6 +1854,96 @@ const IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.
 function isImageFile(name) {
   const dot = name.lastIndexOf('.');
   return dot !== -1 && IMAGE_EXTS.has(name.slice(dot).toLowerCase());
+}
+
+// ── Markdown → PDFMake converter ─────────────────────────────────────────────
+// Converts marked.js token tree directly to PDFMake content — no extra library.
+
+function mdToPdfContent(md) {
+  if (typeof marked === 'undefined') return [{ text: md }];
+  return _blocksToPdf(marked.lexer(md));
+}
+
+function _blocksToPdf(tokens) {
+  const out = [];
+  for (const tok of tokens) {
+    switch (tok.type) {
+      case 'heading': {
+        const sizes = [20, 16, 13, 12, 11, 11];
+        const fs = sizes[tok.depth - 1] || 11;
+        out.push({ text: _inlinesToPdf(tok.tokens), fontSize: fs, bold: true, marginTop: fs >= 16 ? 16 : 10, marginBottom: 5 });
+        break;
+      }
+      case 'paragraph': {
+        // Paragraph that is purely a single image → render as block image
+        if (tok.tokens && tok.tokens.length === 1 && tok.tokens[0].type === 'image') {
+          const img = tok.tokens[0];
+          if (img.href && img.href.startsWith('data:')) {
+            out.push({ image: img.href, fit: [495, 400], alignment: 'center', marginBottom: 8 });
+            break;
+          }
+        }
+        out.push({ text: _inlinesToPdf(tok.tokens), marginBottom: 5 });
+        break;
+      }
+      case 'code':
+        out.push({ text: tok.text, font: 'Courier', fontSize: 9, lineHeight: 1.3, margin: [0, 6, 0, 6], background: '#f5f5f5', preserveLeadingSpaces: true });
+        break;
+      case 'blockquote':
+        out.push({ stack: _blocksToPdf(tok.tokens), margin: [16, 4, 0, 4], color: '#555555' });
+        break;
+      case 'list': {
+        const items = tok.items.map(item => {
+          const blocks = _blocksToPdf(item.tokens);
+          return blocks.length === 1 ? blocks[0] : { stack: blocks };
+        });
+        out.push(tok.ordered ? { ol: items, marginBottom: 6 } : { ul: items, marginBottom: 6 });
+        break;
+      }
+      case 'table': {
+        const header = tok.header.map(c => ({ text: _inlinesToText(c.tokens), bold: true, fillColor: '#f0f0f0', fontSize: 10 }));
+        const rows = tok.rows.map(r => r.map(c => ({ text: _inlinesToText(c.tokens), fontSize: 10 })));
+        out.push({
+          table: { headerRows: 1, widths: tok.header.map(() => '*'), body: [header, ...rows] },
+          layout: { hLineColor: () => '#cccccc', vLineColor: () => '#cccccc', hLineWidth: () => 0.5, vLineWidth: () => 0.5 },
+          marginBottom: 8,
+        });
+        break;
+      }
+      case 'hr':
+        out.push({ canvas: [{ type: 'line', x1: 0, y1: 0, x2: 495, y2: 0, lineWidth: 0.5, lineColor: '#cccccc' }], margin: [0, 12, 0, 12] });
+        break;
+      case 'space': break;
+      default:
+        if (tok.raw && tok.raw.trim()) out.push({ text: tok.raw, marginBottom: 4 });
+    }
+  }
+  return out;
+}
+
+function _inlinesToPdf(tokens) {
+  const out = [];
+  for (const tok of (tokens || [])) {
+    switch (tok.type) {
+      case 'strong':   out.push({ text: _inlinesToPdf(tok.tokens), bold: true }); break;
+      case 'em':       out.push({ text: _inlinesToPdf(tok.tokens), italics: true }); break;
+      case 'del':      out.push({ text: _inlinesToPdf(tok.tokens), decoration: 'lineThrough' }); break;
+      case 'codespan': out.push({ text: tok.text, font: 'Courier', fontSize: 9 }); break;
+      case 'link':     out.push({ text: _inlinesToText(tok.tokens) || tok.href, color: '#0066cc' }); break;
+      case 'image':
+        if (tok.href && tok.href.startsWith('data:')) out.push({ image: tok.href, fit: [495, 300] });
+        break;
+      case 'br':       out.push({ text: '\n' }); break;
+      case 'text':     out.push(tok.text || ''); break;
+      default:         if (tok.raw) out.push(tok.raw); break;
+    }
+  }
+  const flat = out.length === 1 && typeof out[0] === 'string' ? out[0] : out;
+  return flat;
+}
+
+function _inlinesToText(tokens) {
+  return (tokens || []).map(t => t.text || t.raw || '').join('');
 }
 
 function renderMarkdown(text) {

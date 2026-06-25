@@ -395,7 +395,7 @@ html, body { height: 100%; font-family: 'Segoe UI', system-ui, sans-serif; backg
 .hyp-card.expanded .hyp-text { display: block; }
 .hyp-meta { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .hyp-conf { font-size: 11px; color: var(--text-dim); }
-.hyp-feature { font-size: 11px; padding: 1px 6px; background: rgba(99,102,241,0.15); color: var(--accent2); border-radius: 3px; }
+.hyp-feature { font-size: 11px; padding: 1px 6px; background: rgb(59 59 79); color: var(--accent2); border-radius: 3px; }
 .type-badge { font-size: 10px; padding: 1px 6px; background: rgba(192,132,252,0.1); color: var(--purple); border-radius: 3px; }
 
 .importance-actual { font-size: 11px; }
@@ -444,8 +444,8 @@ html, body { height: 100%; font-family: 'Segoe UI', system-ui, sans-serif; backg
 .hyp-toggle-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 
 /* Hypothesis export icon button */
-.hyp-icon-btn { display: inline-flex; align-items: center; gap: 5px; padding: 4px 9px; border: 1px solid var(--border); border-radius: 4px; background: transparent; color: var(--text-dim); font-size: 11px; font-family: inherit; cursor: pointer; transition: background 0.15s, color 0.15s, border-color 0.15s; }
-.hyp-icon-btn:hover { background: var(--bg2); color: var(--text); border-color: var(--accent); }
+.hyp-icon-btn { background: var(--bg2); display: inline-flex; align-items: center; gap: 5px; padding: 4px 9px; border: 1px solid var(--border); border-radius: 4px; color: var(--text-dim); font-size: 11px; font-family: inherit; cursor: pointer; transition: background 0.15s, color 0.15s, border-color 0.15s; }
+.hyp-icon-btn:hover { background: rgb(59 59 79); color: var(--text); border-color: var(--accent); }
 .hyp-icon-btn svg { flex-shrink: 0; }
 
 /* Hypothesis graph pane */
