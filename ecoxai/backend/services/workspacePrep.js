@@ -45,9 +45,9 @@ async function prepareWorkspace(jobId, job, state, volumeManager) {
 
     if (dataset.normalization) {
       if (_explorationReport) {
-        enhancedPrompt = `IMPORTANT: A normalized dataset is attached to this task.
+        enhancedPrompt = `IMPORTANT: A cleaned dataset is attached to this task.
 
-**Dataset Location:** ${datasetBasePath}/normalized/
+**Dataset Location:** ${datasetBasePath}/cleaned/data.feather
 
 **Read this first:** \`/workspace/exploration_report.md\` — contains the full exploration findings, schema, and data quality summary from the previous pipeline stage.
 
