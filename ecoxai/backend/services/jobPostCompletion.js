@@ -150,10 +150,13 @@ function findArtifactByName(artifacts, filename) {
  * @param {Array}  opts.artifacts - Collected artifacts
  * @param {number} opts.exitCode
  * @param {Function} [opts.onHypothesesExtracted] - Callback for hypothesis extraction events
+ * @param {Function} [opts.broadcast] - WebSocket broadcast function
+ * @param {Object}  [opts.storageService] - volumeManager instance (for readDatasetContext)
+ * @param {Object}  [opts.state] - App state (for state.datasets lookup)
  */
 async function processJobCompletion({
   jobId, runId, job, artifacts, exitCode,
-  onHypothesesExtracted
+  onHypothesesExtracted, broadcast, storageService, state
 }) {
   if (exitCode !== 0) return;
 
@@ -171,6 +174,35 @@ async function processJobCompletion({
     }
   } catch (hypothesisError) {
     console.warn(`[${jobId}] Failed to count hypotheses:`, hypothesisError.message);
+  }
+
+  // 2. File wiki discovery and refresh portrait
+  try {
+    const datasetId = job?.datasetId;
+    if (datasetId && state?.datasets?.[datasetId] && storageService) {
+      const wikiService = require('./wikiService');
+      const reportArtifact = findArtifactByName(artifacts, 'report.md')
+        || findArtifactByName(artifacts, 'exploration_report.md');
+      const reportContent = reportArtifact?.content || null;
+
+      let featureData = null;
+      const featureArtifact = findArtifactByName(artifacts, 'feature_importance_results.json');
+      if (featureArtifact?.content) {
+        try { featureData = JSON.parse(featureArtifact.content); } catch (_) {}
+      }
+
+      wikiService.fileDiscovery(datasetId, jobId, job.title, reportContent, featureData)
+        .then(() => {
+          if (typeof broadcast === 'function') broadcast({ type: 'WIKI_UPDATE', datasetId });
+          return storageService.readDatasetContext(datasetId)
+            .then(ctx => wikiService.refreshPortrait(datasetId, state.datasets[datasetId], ctx))
+            .then(() => { if (typeof broadcast === 'function') broadcast({ type: 'WIKI_UPDATE', datasetId }); })
+            .catch(err => console.warn(`[${jobId}] Portrait refresh failed:`, err.message));
+        })
+        .catch(err => console.warn(`[${jobId}] Wiki discovery failed:`, err.message));
+    }
+  } catch (wikiError) {
+    console.warn(`[${jobId}] Wiki update failed:`, wikiError.message);
   }
 
   // 3. Parse feature importance results

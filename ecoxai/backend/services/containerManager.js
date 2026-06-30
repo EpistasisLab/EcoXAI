@@ -151,7 +151,7 @@ class ContainerManager {
     this.timeoutHandles = new Map();
   }
 
-  async runJob(job, state, onOutput, onComplete, onError, onHypothesesExtracted) {
+  async runJob(job, state, onOutput, onComplete, onError, onHypothesesExtracted, broadcast) {
     const { id, prompt, datasetId, selectedSkills } = job;
     const runId = uuidv4();
     const startedAt = new Date().toISOString();
@@ -329,7 +329,7 @@ class ContainerManager {
           });
 
           const { processJobCompletion } = require('./jobPostCompletion');
-          await processJobCompletion({ jobId: id, runId, job, artifacts, exitCode: result.StatusCode, storageService: volumeManager, state, onHypothesesExtracted });
+          await processJobCompletion({ jobId: id, runId, job, artifacts, exitCode: result.StatusCode, storageService: volumeManager, state, onHypothesesExtracted, broadcast });
         } catch (dbError) {
           console.warn(`[${id}] Failed to update run record:`, dbError.message);
         }

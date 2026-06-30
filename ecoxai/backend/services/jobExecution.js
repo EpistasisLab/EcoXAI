@@ -1,15 +1,5 @@
 'use strict';
 
-const path = require('path');
-const wikiService = require('./wikiService');
-
-function findArtifactByName(artifacts, filename) {
-  return artifacts.find(a => {
-    const n = a.name || '';
-    return n === filename || path.basename(n) === filename;
-  });
-}
-
 /**
  * @param {Object} deps
  * @param {string} jobId
@@ -134,33 +124,6 @@ async function startJobExecution(deps, jobId, options = {}) {
             .catch(err => console.warn(`[Volume] Cleanup failed for ${jobId}:`, err.message));
         }
 
-        // Async wiki update — file discovery then refresh portrait
-        if (completedJob?.datasetId && state.datasets[completedJob.datasetId]) {
-          const datasetId = completedJob.datasetId;
-          const datasetMeta = state.datasets[datasetId];
-
-          const reportArtifact = findArtifactByName(result.artifacts, 'report.md')
-            || findArtifactByName(result.artifacts, 'exploration_report.md');
-          const reportContent = reportArtifact?.content || null;
-
-          let featureData = null;
-          const featureArtifact = findArtifactByName(result.artifacts, 'feature_importance_results.json');
-          if (featureArtifact?.content) {
-            try { featureData = JSON.parse(featureArtifact.content); } catch (_) {}
-          }
-
-          wikiService.fileDiscovery(datasetId, completedJob.id, completedJob.title, reportContent, featureData)
-            .then(() => {
-              // Always broadcast after discovery so the frontend sees the new insights
-              broadcast({ type: 'WIKI_UPDATE', datasetId });
-              // Then attempt to refresh the portrait — failures here are non-fatal
-              return volumeManager.readDatasetContext(datasetId)
-                .then(ctx => wikiService.refreshPortrait(datasetId, datasetMeta, ctx))
-                .then(() => broadcast({ type: 'WIKI_UPDATE', datasetId }))
-                .catch(err => console.warn(`[Wiki] Portrait refresh failed:`, err.message));
-            })
-            .catch(err => console.warn(`[Wiki] Discovery failed:`, err.message));
-        }
       },
       (error) => {
         updateJob(jobId, { status: 'failed', exitCode: -1, completedAt: new Date().toISOString() });
@@ -181,7 +144,8 @@ async function startJobExecution(deps, jobId, options = {}) {
             count: hypotheses?.length || 0
           });
         }
-      }
+      },
+      broadcast
     );
 
     return { success: true };
