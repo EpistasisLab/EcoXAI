@@ -1609,10 +1609,24 @@ window.app = {
       const slug = hyp.hypothesis_text.replace(/[^a-z0-9]+/gi, '_').slice(0, 60).toLowerCase();
       pdfMake.createPdf({
         content,
-        defaultStyle: { fontSize: 9, lineHeight: 1.5 },
+        fonts: {
+          Roboto: {
+            normal: 'Roboto-Regular.ttf',
+            bold: 'Roboto-Medium.ttf',
+            italics: 'Roboto-Italic.ttf',
+            bolditalics: 'Roboto-MediumItalic.ttf',
+          },
+          Courier: {
+            normal: 'Courier',
+            bold: 'Courier-Bold',
+            italics: 'Courier-Oblique',
+            bolditalics: 'Courier-BoldOblique',
+          },
+        },
+        defaultStyle: { font: 'Roboto', fontSize: 9, lineHeight: 1.5 },
         styles: {
-          'html-h1': { fontSize: 17, bold: true, marginBottom: 8, marginTop: 16 },
-          'html-h2': { fontSize: 14, bold: true, marginBottom: 6, marginTop: 14 },
+          'html-h1': { fontSize: 14, bold: true, marginBottom: 8, marginTop: 16 },
+          'html-h2': { fontSize: 12, bold: true, marginBottom: 6, marginTop: 14 },
           'html-h3': { fontSize: 11, bold: true, marginBottom: 4, marginTop: 12 },
           'html-h4': { fontSize: 9, bold: true, marginBottom: 4, marginTop: 10 },
           'html-pre': { fontSize: 8, lineHeight: 1.3 },
@@ -1901,11 +1915,22 @@ function _blocksToPdf(tokens) {
         break;
       }
       case 'table': {
-        const header = tok.header.map(c => ({ text: _inlinesToText(c.tokens), bold: true, fillColor: '#f0f0f0', fontSize: 9 }));
-        const rows = tok.rows.map(r => r.map(c => ({ text: _inlinesToText(c.tokens), fontSize: 9 })));
+        const colCount = tok.header.length;
+        const emptyCell = { text: '', fontSize: 9 };
+        const header = tok.header.map(c => ({ text: _inlinesToPdf(c.tokens), bold: true, fillColor: '#f0f0f0', fontSize: 9 }));
+        const rows = tok.rows.map(r => {
+          const cells = r.map(c => ({ text: _inlinesToPdf(c.tokens), fontSize: 9 }));
+          while (cells.length < colCount) cells.push({ ...emptyCell });
+          return cells.slice(0, colCount);
+        });
         out.push({
-          table: { headerRows: 1, widths: tok.header.map(() => '*'), body: [header, ...rows] },
-          layout: { hLineColor: () => '#cccccc', vLineColor: () => '#cccccc', hLineWidth: () => 0.5, vLineWidth: () => 0.5 },
+          table: { headerRows: 1, keepWithHeaderRows: 1, widths: tok.header.map(() => '*'), body: [header, ...rows] },
+          layout: {
+            hLineColor: () => '#cccccc', vLineColor: () => '#cccccc',
+            hLineWidth: () => 0.5, vLineWidth: () => 0.5,
+            paddingLeft: () => 4, paddingRight: () => 4,
+            paddingTop: () => 3, paddingBottom: () => 3,
+          },
           marginBottom: 8,
         });
         break;

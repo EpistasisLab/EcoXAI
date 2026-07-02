@@ -469,7 +469,7 @@ html, body { height: 100%; font-family: 'Segoe UI', system-ui, sans-serif; backg
 .hyp-job-section { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .hyp-job-header { padding: 8px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 8px; flex-shrink: 0; font-size: 12px; flex-wrap: wrap; }
 .hyp-job-label { font-size: 10px; font-weight: 600; text-transform: uppercase; color: var(--text-on-bg); letter-spacing: 0.07em; flex-shrink: 0; }
-.hyp-job-title { flex: 1; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.hyp-job-title { flex: 1; color: var(--text-on-bg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .hyp-detail-pane .hyp-detail-row span { color: var(--text-on-bg); }
 .hyp-detail-pane .hyp-detail-row strong { color: var(--text-dim-on-bg); }
 .hyp-detail-pane .hyp-conf { color: var(--text-dim-on-bg); }
