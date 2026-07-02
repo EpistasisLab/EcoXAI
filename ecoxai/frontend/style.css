@@ -395,7 +395,7 @@ html, body { height: 100%; font-family: 'Segoe UI', system-ui, sans-serif; backg
 .hyp-card.expanded .hyp-text { display: block; }
 .hyp-meta { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .hyp-conf { font-size: 11px; color: var(--text-dim); }
-.hyp-feature { font-size: 11px; padding: 1px 6px; background: rgb(59 59 79); color: var(--accent2); border-radius: 3px; }
+.hyp-feature { font-size: 11px; padding: 1px 6px; background: rgb(59 59 79); color: var(--accent2); border-radius: 3px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .type-badge { font-size: 10px; padding: 1px 6px; background: rgba(192,132,252,0.1); color: var(--purple); border-radius: 3px; }
 
 .importance-actual { font-size: 11px; }
@@ -542,7 +542,7 @@ html, body { height: 100%; font-family: 'Segoe UI', system-ui, sans-serif; backg
 .asset-preview-area > .markdown-body strong { color: var(--text); }
 .asset-preview-area > .markdown-body em,
 .asset-preview-area > .markdown-body pre code,
-.asset-preview-area > .markdown-body blockquote { color: var(--text-dim); }
+.asset-preview-area > .markdown-body blockquote { color: var(--text-on-bg); }
 .asset-preview-area > .markdown-body code { color: var(--accent2); }
 
 /* ── Lazy text loader ── */

@@ -1609,14 +1609,14 @@ window.app = {
       const slug = hyp.hypothesis_text.replace(/[^a-z0-9]+/gi, '_').slice(0, 60).toLowerCase();
       pdfMake.createPdf({
         content,
-        defaultStyle: { fontSize: 11, lineHeight: 1.5 },
+        defaultStyle: { fontSize: 9, lineHeight: 1.5 },
         styles: {
-          'html-h1': { fontSize: 20, bold: true, marginBottom: 8, marginTop: 16 },
-          'html-h2': { fontSize: 16, bold: true, marginBottom: 6, marginTop: 14 },
-          'html-h3': { fontSize: 13, bold: true, marginBottom: 4, marginTop: 12 },
-          'html-h4': { fontSize: 11, bold: true, marginBottom: 4, marginTop: 10 },
-          'html-pre': { fontSize: 9, lineHeight: 1.3 },
-          'html-code': { fontSize: 9 },
+          'html-h1': { fontSize: 17, bold: true, marginBottom: 8, marginTop: 16 },
+          'html-h2': { fontSize: 14, bold: true, marginBottom: 6, marginTop: 14 },
+          'html-h3': { fontSize: 11, bold: true, marginBottom: 4, marginTop: 12 },
+          'html-h4': { fontSize: 9, bold: true, marginBottom: 4, marginTop: 10 },
+          'html-pre': { fontSize: 8, lineHeight: 1.3 },
+          'html-code': { fontSize: 8 },
         },
         pageMargins: [50, 50, 50, 50],
         pageSize: 'A4',
@@ -1869,9 +1869,9 @@ function _blocksToPdf(tokens) {
   for (const tok of tokens) {
     switch (tok.type) {
       case 'heading': {
-        const sizes = [20, 16, 13, 12, 11, 11];
-        const fs = sizes[tok.depth - 1] || 11;
-        out.push({ text: _inlinesToPdf(tok.tokens), fontSize: fs, bold: true, marginTop: fs >= 16 ? 16 : 10, marginBottom: 5 });
+        const sizes = [17, 14, 11, 10, 9, 9];
+        const fs = sizes[tok.depth - 1] || 9;
+        out.push({ text: _inlinesToPdf(tok.tokens), fontSize: fs, bold: true, marginTop: fs >= 14 ? 16 : 10, marginBottom: 5 });
         break;
       }
       case 'paragraph': {
@@ -1887,7 +1887,7 @@ function _blocksToPdf(tokens) {
         break;
       }
       case 'code':
-        out.push({ text: tok.text, font: 'Courier', fontSize: 9, lineHeight: 1.3, margin: [0, 6, 0, 6], background: '#f5f5f5', preserveLeadingSpaces: true });
+        out.push({ text: tok.text, font: 'Courier', fontSize: 8, lineHeight: 1.3, margin: [0, 6, 0, 6], background: '#f5f5f5', preserveLeadingSpaces: true });
         break;
       case 'blockquote':
         out.push({ stack: _blocksToPdf(tok.tokens), margin: [16, 4, 0, 4], color: '#555555' });
@@ -1901,8 +1901,8 @@ function _blocksToPdf(tokens) {
         break;
       }
       case 'table': {
-        const header = tok.header.map(c => ({ text: _inlinesToText(c.tokens), bold: true, fillColor: '#f0f0f0', fontSize: 10 }));
-        const rows = tok.rows.map(r => r.map(c => ({ text: _inlinesToText(c.tokens), fontSize: 10 })));
+        const header = tok.header.map(c => ({ text: _inlinesToText(c.tokens), bold: true, fillColor: '#f0f0f0', fontSize: 9 }));
+        const rows = tok.rows.map(r => r.map(c => ({ text: _inlinesToText(c.tokens), fontSize: 9 })));
         out.push({
           table: { headerRows: 1, widths: tok.header.map(() => '*'), body: [header, ...rows] },
           layout: { hLineColor: () => '#cccccc', vLineColor: () => '#cccccc', hLineWidth: () => 0.5, vLineWidth: () => 0.5 },
@@ -1928,7 +1928,7 @@ function _inlinesToPdf(tokens) {
       case 'strong':   out.push({ text: _inlinesToPdf(tok.tokens), bold: true }); break;
       case 'em':       out.push({ text: _inlinesToPdf(tok.tokens), italics: true }); break;
       case 'del':      out.push({ text: _inlinesToPdf(tok.tokens), decoration: 'lineThrough' }); break;
-      case 'codespan': out.push({ text: tok.text, font: 'Courier', fontSize: 9 }); break;
+      case 'codespan': out.push({ text: tok.text, font: 'Courier', fontSize: 8 }); break;
       case 'link':     out.push({ text: _inlinesToText(tok.tokens) || tok.href, color: '#0066cc' }); break;
       case 'image':
         if (tok.href && tok.href.startsWith('data:')) out.push({ image: tok.href, fit: [495, 300] });
