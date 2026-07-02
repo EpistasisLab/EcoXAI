@@ -330,7 +330,7 @@ function renderPipeline() {
       <div class="stage-jobs">
         ${stageJobs.map(j => {
           const dot = JOB_STATUS_COLORS[j.status] || 'var(--text-dim)';
-          const cost = j.totalCostUsd != null ? `<span class="stage-job-cost">$${j.totalCostUsd.toFixed(4)}</span>` : '';
+          const cost = j.totalCostUsd != null ? `<span class="stage-job-cost">$${j.totalCostUsd.toFixed(2)}</span>` : '';
           const turns = j.numTurns != null ? `<span class="stage-job-turns">${j.numTurns}t</span>` : '';
           const sel = state.selectedJobId === j.id ? ' selected' : '';
           return `<div class="stage-job${sel}" onclick="event.stopPropagation();app.selectJob('${j.id}')">
@@ -418,7 +418,7 @@ function renderJobDetail(jobId) {
   if (!job) return;
 
   const detail = document.getElementById('pipeline-detail');
-  const cost   = job.totalCostUsd != null ? `<span style="color:var(--green)">$${job.totalCostUsd.toFixed(4)}</span>` : '';
+  const cost   = job.totalCostUsd != null ? `<span style="color:var(--green)">$${job.totalCostUsd.toFixed(2)}</span>` : '';
   const turns  = job.numTurns != null ? `<span>${job.numTurns} turns</span>` : '';
   const artCount = (job.artifacts || []).length;
 
@@ -841,7 +841,7 @@ function renderHypDetail() {
         jobStatusEl.textContent = job.status || 'unknown';
       }
       const costEl = panel.querySelector('.hyp-job-cost');
-      if (costEl && job.totalCostUsd != null) costEl.textContent = `$${job.totalCostUsd.toFixed(4)}`;
+      if (costEl && job.totalCostUsd != null) costEl.textContent = `$${job.totalCostUsd.toFixed(2)}`;
     }
     return;
   }
@@ -874,7 +874,7 @@ function renderHypDetail() {
     const jobLabel = job._stageId === 'analyze' ? 'Analysis Job'
       : job._stageId ? job._stageId.charAt(0).toUpperCase() + job._stageId.slice(1) + ' Job'
       : 'Job';
-    const jCost = job.totalCostUsd != null ? `<span class="hyp-job-cost" style="color:var(--green)">$${job.totalCostUsd.toFixed(4)}</span>` : '';
+    const jCost = job.totalCostUsd != null ? `<span class="hyp-job-cost" style="color:var(--green)">$${job.totalCostUsd.toFixed(2)}</span>` : '';
     const jTurns = job.numTurns != null ? `<span style="color:var(--text-dim)">${job.numTurns}t</span>` : '';
     const artCount = (job.artifacts || []).length;
     const logContent = escHtml(state.activeJobLogs[job.id] || job.output || '(no output yet)');
@@ -1286,12 +1286,12 @@ function renderBudgetStatus() {
   const spentEl = document.getElementById('s-budget-spent');
   const barEl   = document.getElementById('s-budget-bar');
   const lblEl   = document.getElementById('s-budget-limit-label');
-  if (spentEl) spentEl.textContent = `$${spent.toFixed(4)}`;
+  if (spentEl) spentEl.textContent = `$${spent.toFixed(2)}`;
   if (barEl)   { barEl.style.width = `${pct}%`; barEl.style.background = color; }
   if (lblEl)   lblEl.textContent = `/ $${limit.toFixed(2)}`;
   const ps = document.getElementById('pipeline-budget-spent');
   const pl = document.getElementById('pipeline-budget-limit');
-  if (ps) ps.textContent = `$${spent.toFixed(4)}`;
+  if (ps) ps.textContent = `$${spent.toFixed(2)}`;
   if (pl) pl.textContent = `$${limit.toFixed(2)}`;
 }
 
@@ -1616,12 +1616,6 @@ window.app = {
             italics: 'Roboto-Italic.ttf',
             bolditalics: 'Roboto-MediumItalic.ttf',
           },
-          Courier: {
-            normal: 'Courier',
-            bold: 'Courier-Bold',
-            italics: 'Courier-Oblique',
-            bolditalics: 'Courier-BoldOblique',
-          },
         },
         defaultStyle: { font: 'Roboto', fontSize: 9, lineHeight: 1.5 },
         styles: {
@@ -1901,7 +1895,7 @@ function _blocksToPdf(tokens) {
         break;
       }
       case 'code':
-        out.push({ text: tok.text, font: 'Courier', fontSize: 8, lineHeight: 1.3, margin: [0, 6, 0, 6], background: '#f5f5f5', preserveLeadingSpaces: true });
+        out.push({ text: tok.text, fontSize: 8, lineHeight: 1.3, margin: [0, 6, 0, 6], background: '#f5f5f5', preserveLeadingSpaces: true });
         break;
       case 'blockquote':
         out.push({ stack: _blocksToPdf(tok.tokens), margin: [16, 4, 0, 4], color: '#555555' });
@@ -1953,7 +1947,7 @@ function _inlinesToPdf(tokens) {
       case 'strong':   out.push({ text: _inlinesToPdf(tok.tokens), bold: true }); break;
       case 'em':       out.push({ text: _inlinesToPdf(tok.tokens), italics: true }); break;
       case 'del':      out.push({ text: _inlinesToPdf(tok.tokens), decoration: 'lineThrough' }); break;
-      case 'codespan': out.push({ text: tok.text, font: 'Courier', fontSize: 8 }); break;
+      case 'codespan': out.push({ text: tok.text, fontSize: 8, background: '#f0f0f0' }); break;
       case 'link':     out.push({ text: _inlinesToText(tok.tokens) || tok.href, color: '#0066cc' }); break;
       case 'image':
         if (tok.href && tok.href.startsWith('data:')) out.push({ image: tok.href, fit: [495, 300] });

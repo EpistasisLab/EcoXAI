@@ -48,14 +48,11 @@
       <div class="view-content">
         <label class="upload-area" for="file-upload">
           <div style="font-size:24px;margin-bottom:8px">📂</div>
-          <div style="font-weight:600;margin-bottom:4px">Drop a file or click to upload</div>
+          <div style="font-weight:600;margin-bottom:4px">Click to upload or drop files directly into <code>ecoxai/backend/datasets/</code></div>
           <div style="font-size:11px">CSV, JSON, Feather, or Excel — add context, then start the pipeline</div>
           <input id="file-upload" type="file" accept=".csv,.json,.feather,.xlsx,.xls">
           <div id="upload-status" style="margin-top:6px;font-size:11px;min-height:14px"></div>
         </label>
-        <div style="margin-top:12px;font-size:11px;color:var(--text-dim)">
-          Or drop files directly into <code>ecoxai/backend/datasets/</code>
-        </div>
         <div id="ds-pipeline-banner" style="margin-top:16px;padding:12px 14px;border-radius:6px;background:var(--bg2);display:flex;align-items:center;gap:12px;justify-content:space-between">
           <div style="display:flex;align-items:center;gap:10px">
             <span class="auto-badge off" id="ds-auto-badge">PAUSED</span>
@@ -79,7 +76,7 @@
         <h2>Pipeline</h2>
         <span class="auto-badge on" id="auto-badge">AUTO</span>
         <span id="pipeline-budget-display" class="pipeline-budget">
-          <span id="pipeline-budget-spent">$0.0000</span>
+          <span id="pipeline-budget-spent">$0.00</span>
           <span class="pipeline-budget-sep">/</span>
           <span id="pipeline-budget-limit">$10.00</span>
         </span>
@@ -245,7 +242,7 @@
             <div class="settings-row" style="align-items:center">
               <label>Spent</label>
               <div style="display:flex;align-items:center;gap:8px">
-                <span id="s-budget-spent" style="font-variant-numeric:tabular-nums">$0.0000</span>
+                <span id="s-budget-spent" style="font-variant-numeric:tabular-nums">$0.00</span>
                 <span id="s-budget-bar-wrap" style="flex:1;height:6px;background:var(--bg3);border-radius:3px;min-width:80px;overflow:hidden">
                   <div id="s-budget-bar" style="height:100%;width:0%;background:var(--green);border-radius:3px;transition:width 0.3s,background 0.3s"></div>
                 </span>
