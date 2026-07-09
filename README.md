@@ -1,12 +1,22 @@
 # EcoXAI
 
-![EcoXAI Workflow](ecoxai_workflow.jpg)
-
 **EcoXAI** is a knowledge graph-grounded multi-agent framework for autonomous biomedical discovery. Rather than executing a fixed machine learning pipeline, EcoXAI performs an iterative scientific workflow that combines exploratory data analysis, hypothesis generation, hypothesis-specific validation, and discovery memory. AI agents operate inside isolated Docker containers while a planner orchestrates the end-to-end research loop and tracks every experiment for reproducibility. The frontend provides real-time monitoring, experiment inspection, and hypothesis management.
+
+<img src="ecoxai_workflow.jpg" alt="EcoXAI Workflow" width="50%">
 
 ---
 
 ## Features
+
+### EcoXAI GUI
+
+| View | Description |
+|------|-------------|
+| **Datasets** | Upload and manage datasets; add research context and a guiding research question per dataset |
+| **Pipeline** | Monitor live job execution across all stages; view logs, artifacts, and per-job cost in real time |
+| **Hypotheses** | Browse, filter, and inspect all generated hypotheses with their status (supported / rejected / needs more data) |
+| **Skills** | Browse, create, filter, and inspect all available skills |
+| **Settings** | Configure the API budget limit and other runtime parameters |
 
 ### Pipeline Stages
 
@@ -16,15 +26,6 @@
 | **Explore** | Exploratory data analysis; produces a summary report and key statistics artifacts |
 | **Hypothesize** | Generates ranked candidate biomedical hypotheses grounded in the explored data |
 | **Test/Validate** | Iteratively evaluates the hypothesis against the dataset, producing a detailed report (parallelizable) |
-
-### Frontend Views
-
-| View | Description |
-|------|-------------|
-| **Datasets** | Upload and manage datasets; add research context and a guiding research question per dataset |
-| **Pipeline** | Monitor live job execution across all stages; view logs, artifacts, and per-job cost in real time |
-| **Hypotheses** | Browse, filter, and inspect all generated hypotheses with their status (supported / rejected / needs more data) |
-| **Settings** | Configure the API budget limit and other runtime parameters |
 
 ---
 
