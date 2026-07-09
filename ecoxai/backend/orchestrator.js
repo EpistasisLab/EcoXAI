@@ -237,7 +237,7 @@ class Orchestrator extends EventEmitter {
 
     if (!queue || !queue.length) return; // Queue empty, still waiting for in-flight jobs
 
-    const maxParallelJobs = this.deps.state.settings?.maxParallelJobs ?? 3;
+    const maxParallelJobs = this.deps.state.settings?.maxParallelJobs ?? 2;
     const availableSlots = Math.max(0, maxParallelJobs - runningAnalyzeCount);
     if (availableSlots === 0) return;
 

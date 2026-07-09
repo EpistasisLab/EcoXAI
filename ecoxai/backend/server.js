@@ -75,8 +75,8 @@ function loadState() {
         loaded.jobs = loaded.jobs.map(j => ({ ...j, selectedSkills: j.selectedSkills || [], skillsInvoked: j.skillsInvoked || [] }));
       }
       loaded.budget = loaded.budget || { totalCostUsd: 0, jobCount: 0 };
-      loaded.settings = loaded.settings || { budgetLimitUsd: 10, maxParallelJobs: 3, maxHypothesisCycles: 2, containerRamMb: 12288 };
-      if (loaded.settings.maxParallelJobs === undefined) loaded.settings.maxParallelJobs = 3;
+      loaded.settings = loaded.settings || { budgetLimitUsd: 10, maxParallelJobs: 2, maxHypothesisCycles: 2, containerRamMb: 12288 };
+      if (loaded.settings.maxParallelJobs === undefined) loaded.settings.maxParallelJobs = 2;
       if (loaded.settings.maxHypothesisCycles === undefined) loaded.settings.maxHypothesisCycles = 2;
       if (loaded.settings.containerRamMb === undefined) loaded.settings.containerRamMb = 12288;
       console.log(`Loaded state: ${loaded.jobs?.length || 0} jobs, ${Object.keys(loaded.datasets || {}).length} datasets`);
@@ -85,7 +85,7 @@ function loadState() {
   } catch (error) {
     console.error('Failed to load state:', error.message);
   }
-  return { jobs: [], datasets: {}, budget: { totalCostUsd: 0, jobCount: 0 }, settings: { budgetLimitUsd: 10, maxParallelJobs: 3, maxHypothesisCycles: 2, containerRamMb: 12288 } };
+  return { jobs: [], datasets: {}, budget: { totalCostUsd: 0, jobCount: 0 }, settings: { budgetLimitUsd: 10, maxParallelJobs: 2, maxHypothesisCycles: 2, containerRamMb: 12288 } };
 }
 
 let state = loadState();
@@ -108,7 +108,7 @@ wss.on('connection', (ws) => {
     datasets: Object.values(state.datasets),
     pipeline: orchestrator.getStatus(),
     budget: state.budget || { totalCostUsd: 0, jobCount: 0 },
-    settings: state.settings || { budgetLimitUsd: 10, maxParallelJobs: 3, maxHypothesisCycles: 2 },
+    settings: state.settings || { budgetLimitUsd: 10, maxParallelJobs: 2, maxHypothesisCycles: 2 },
   }));
   ws.on('close', () => clients.delete(ws));
   ws.on('error', (err) => { console.warn('[WS] Client error:', err.message); clients.delete(ws); });
@@ -289,7 +289,7 @@ app.get('/api/settings', (req, res) => {
 });
 
 app.put('/api/settings', (req, res) => {
-  if (!state.settings) state.settings = { budgetLimitUsd: 10, maxParallelJobs: 3, maxHypothesisCycles: 2, containerRamMb: 12288 };
+  if (!state.settings) state.settings = { budgetLimitUsd: 10, maxParallelJobs: 2, maxHypothesisCycles: 2, containerRamMb: 12288 };
   const { budgetLimitUsd, maxParallelJobs, maxHypothesisCycles, containerRamMb } = req.body;
   if (budgetLimitUsd !== undefined) {
     const limit = parseFloat(budgetLimitUsd);
