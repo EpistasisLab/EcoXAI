@@ -1,8 +1,9 @@
 # EcoXAI
 
-**EcoXAI** is a knowledge graph-grounded multi-agent framework for autonomous biomedical discovery. Rather than executing a fixed machine learning pipeline, EcoXAI performs an iterative scientific workflow that combines exploratory data analysis, hypothesis generation, hypothesis-specific validation, and discovery memory. AI agents operate inside isolated Docker containers while a planner orchestrates the end-to-end research loop and tracks every experiment for reproducibility. The frontend provides real-time monitoring, experiment inspection, and hypothesis management.
-
-<img src="ecoxai_workflow.jpg" alt="EcoXAI Workflow" width="50%">
+<table border="0" cellspacing="0" cellpadding="16"><tr>
+<td width="50%"><img src="ecoxai_workflow.jpg" alt="EcoXAI Workflow" width="100%"></td>
+<td valign="top"><b>EcoXAI</b> is a knowledge graph-grounded multi-agent framework for autonomous biomedical discovery. Rather than executing a fixed machine learning pipeline, EcoXAI performs an iterative scientific workflow that combines exploratory data analysis, hypothesis generation, hypothesis-specific validation, and discovery memory. AI agents operate inside isolated Docker containers while a planner orchestrates the end-to-end research loop and tracks every experiment for reproducibility. The frontend provides real-time monitoring, experiment inspection, and hypothesis management.</td>
+</tr></table>
 
 ---
 
