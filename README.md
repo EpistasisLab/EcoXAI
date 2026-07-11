@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="logo.jpg" width="180" alt="EcoXAI logo">
+  <img src="logo.jpg" alt="EcoXAI logo">
 </p>
 
 <h1 align="center">EcoXAI</h1>
