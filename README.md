@@ -72,8 +72,9 @@ cd ecoxai/backend
 
 ## Prerequisites
 
-- **Docker** must be running and the `ecoxai-agent` image must be built (see below)
+- **Docker** must be running
 - **Node.js 20+**
+- **Python 3**
 - An Anthropic API key (direct or via Azure Foundry)
 
 ---
@@ -103,29 +104,21 @@ export CLAUDE_MODEL='unsloth/Qwen3.6-27B-MTP-GGUF:UD-Q4_K_XL'
 ```
 > The backend automatically rewrites `localhost` to `host.docker.internal` when passing the URL into Docker containers.
 
-### 2. Build the Agent Docker Image
+### 2. Start Everything
 
 ```bash
-cd ecoxai/backend/docker
-docker build -t ecoxai-agent -f Dockerfile.agent .
+./start.sh
 ```
 
-### 3. Start the Backend
+This single script handles everything on first run and subsequent runs:
+- Builds the `ecoxai-agent` Docker image if it is not already present
+- Installs backend npm dependencies if `node_modules` is missing
+- Starts the backend on **http://localhost:8081**
+- Starts the frontend dev server on **http://localhost:3000**
 
-```bash
-cd ecoxai/backend
-npm install
-npm start
-```
+Press **Ctrl-C** to stop — both processes are cleanly terminated together.
 
-### 4. Run the Frontend Dev Server
-
-```bash
-cd ecoxai/frontend
-python3 -m http.server 3000
-```
-
-### 5. (Optional) Reset the dataset and pipeline state
+### 3. (Optional) Reset the dataset and pipeline state
 
 ```bash
 cd ecoxai/backend
