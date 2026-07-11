@@ -571,6 +571,7 @@ html, body { height: 100%; font-family: 'Segoe UI', system-ui, sans-serif; backg
 
 /* ── Upload feedback ── */
 .upload-area.uploading { opacity: 0.6; pointer-events: none; cursor: default; }
+.upload-area.dragging { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--bg2)); }
 #upload-status.success { color: var(--green); }
 #upload-status.error   { color: var(--red); }
 .btn:disabled { opacity: 0.4; cursor: not-allowed; pointer-events: none; }

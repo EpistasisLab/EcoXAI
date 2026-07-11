@@ -36,17 +36,29 @@ if [ ! -d "$SCRIPT_DIR/ecoxai/backend/node_modules" ]; then
 fi
 
 # Start backend
-echo "Starting backend on http://localhost:8081 ..."
+echo "Starting backend..."
 (cd "$SCRIPT_DIR/ecoxai/backend" && npm start) &
 BACKEND_PID=$!
 
 # Start frontend
-echo "Starting frontend on http://localhost:3000 ..."
-(cd "$SCRIPT_DIR/ecoxai/frontend" && python3 -m http.server 3000) &
+echo "Starting frontend..."
+(cd "$SCRIPT_DIR/ecoxai/frontend" && python3 -m http.server 3000 2>/dev/null) &
 FRONTEND_PID=$!
 
+# Wait for backend to be ready (up to 20s)
+echo "Waiting for backend..."
+_tries=0
+until curl -s --max-time 1 http://localhost:8081/api/pipeline/status > /dev/null 2>&1; do
+  _tries=$((_tries + 1))
+  if [ "$_tries" -ge 20 ]; then
+    echo "Warning: backend did not respond after 20s — it may still be starting."
+    break
+  fi
+  sleep 1
+done
+
 echo ""
-echo "EcoXAI running."
+echo "EcoXAI ready."
 echo "  App:      http://localhost:8081"
 echo "  Frontend: http://localhost:3000"
 echo ""

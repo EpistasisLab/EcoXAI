@@ -12,7 +12,6 @@ function defaultSettings() {
   return {
     host: `${location.hostname}:8081`,
     hypLimit: 200,
-    hypRefresh: 30,
     autoScroll: true,
   };
 }
@@ -55,7 +54,6 @@ const state = {
 // ── WebSocket ─────────────────────────────────────────────────────────────────
 let ws = null;
 let wsReconnectTimer = null;
-let hypRefreshTimer = null;
 
 function connectWS() {
   ws = new WebSocket(wsUrl());
@@ -104,8 +102,7 @@ function handleMessage(msg) {
 
     case 'JOB_UPDATE':
       state.jobs = msg.jobs || state.jobs;
-      renderPipeline();
-      renderHypotheses();
+      renderPipelineDebounced();
       renderHypDetail();
       break;
 
@@ -259,17 +256,12 @@ async function loadWiki(datasetId) {
   } catch { area.innerHTML = ''; }
 }
 
-document.getElementById('file-upload').addEventListener('change', async (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
-
+async function uploadFile(file) {
   const uploadArea = document.querySelector('.upload-area');
   const statusEl   = document.getElementById('upload-status');
-
   uploadArea.classList.add('uploading');
   statusEl.className = '';
   statusEl.textContent = '';
-
   const fd = new FormData();
   fd.append('file', file);
   try {
@@ -285,11 +277,32 @@ document.getElementById('file-upload').addEventListener('change', async (e) => {
   } finally {
     uploadArea.classList.remove('uploading');
   }
+}
+
+document.getElementById('file-upload').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  await uploadFile(file);
   e.target.value = '';
+});
+
+const _uploadArea = document.querySelector('.upload-area');
+_uploadArea.addEventListener('dragover', (e) => { e.preventDefault(); _uploadArea.classList.add('dragging'); });
+_uploadArea.addEventListener('dragleave', () => { _uploadArea.classList.remove('dragging'); });
+_uploadArea.addEventListener('drop', async (e) => {
+  e.preventDefault();
+  _uploadArea.classList.remove('dragging');
+  const file = e.dataTransfer.files[0];
+  if (file) await uploadFile(file);
 });
 
 // ── Pipeline view ──────────────────────────────────────────────────────────────
 const stageStatuses = {};
+let _renderPipelineTimer = null;
+function renderPipelineDebounced() {
+  if (_renderPipelineTimer) return;
+  _renderPipelineTimer = requestAnimationFrame(() => { _renderPipelineTimer = null; renderPipeline(); });
+}
 const JOB_STATUS_COLORS = {
   'in-progress': 'var(--yellow)',
   completed: 'var(--green)',
@@ -1269,7 +1282,6 @@ function renderSkillDetail(skillId) {
 function applySettingsToForm() {
   document.getElementById('s-host').value         = settings.host;
   document.getElementById('s-hyp-limit').value    = settings.hypLimit;
-  document.getElementById('s-hyp-refresh').value  = settings.hypRefresh;
   document.getElementById('s-autoscroll').checked = settings.autoScroll;
   document.getElementById('s-max-parallel-jobs').value = state.serverSettings.maxParallelJobs ?? 3;
   document.getElementById('s-max-hypothesis-cycles').value = state.serverSettings.maxHypothesisCycles ?? 2;
@@ -1639,13 +1651,9 @@ window.app = {
     settings = {
       host: document.getElementById('s-host').value.trim() || defaultSettings().host,
       hypLimit: parseInt(document.getElementById('s-hyp-limit').value) || 200,
-      hypRefresh: parseInt(document.getElementById('s-hyp-refresh').value) || 30,
       autoScroll: document.getElementById('s-autoscroll').checked,
     };
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
-
-    clearInterval(hypRefreshTimer);
-    hypRefreshTimer = setInterval(loadHypotheses, settings.hypRefresh * 1000);
 
     if (settings.host !== prevHost) {
       if (ws) ws.close();
@@ -1989,7 +1997,14 @@ function escAttr(str) {
 
 function formatDate(iso) {
   if (!iso) return '';
-  return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const d = new Date(iso);
+  const now = new Date();
+  const sameDay = d.getFullYear() === now.getFullYear() &&
+                  d.getMonth() === now.getMonth() &&
+                  d.getDate() === now.getDate();
+  if (sameDay) return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return d.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' +
+         d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
@@ -2012,7 +2027,6 @@ async function init() {
   } catch { /* backend not yet up */ }
 
   await loadHypotheses();
-  hypRefreshTimer = setInterval(loadHypotheses, settings.hypRefresh * 1000);
 }
 
 init();
