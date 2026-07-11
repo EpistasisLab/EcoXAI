@@ -1,8 +1,16 @@
-# EcoXAI
+<p align="center">
+  <img src="logo.jpg" width="180" alt="EcoXAI logo">
+</p>
+
+<h1 align="center">EcoXAI</h1>
+
+<p align="center"><b>Eco</b>system for e<b>X</b>plainable <b>AI</b></p>
+
+<h3 align="center">Hypothesize. Evaluate. Learn. Repeat.</h3>
 
 <table border="0" cellspacing="0" cellpadding="16"><tr>
-<td width="50%"><img src="ecoxai_workflow.jpg" alt="EcoXAI Workflow" width="100%"></td>
-<td valign="top"><b>EcoXAI</b> is a knowledge graph-grounded multi-agent framework for autonomous biomedical discovery. Every stage of the pipeline from normalization, exploration, hypothesis generation, to evaluation is executed end-to-end by Claude Code AI agents running inside isolated Docker containers. Each agent receives a skill-driven prompt, autonomously writes and executes analysis code, and produces structured artifacts that feed the next stage. An AI agent orchestrator manages the full autonomous research loop: extracts hypotheses inspired by knowledge graphs and the dataset, routes them to parallel validation agents, and tracks every experiment for reproducibility and repeats the cycle until the budget or number of hypotheses cycles is reached. No human intervention is required between steps as EcoXAI goes from raw dataset to ranked, evidence-backed biomedical hypotheses entirely through chained AI agent execution. The frontend provides real-time monitoring, experiment inspection, and hypothesis management.</td>
+<td border="0" width="50%"><img src="ecoxai_workflow.jpg" alt="EcoXAI Workflow" width="100%"></td>
+<td border="0" valign="top"><b>EcoXAI</b> is a knowledge graph-grounded multi-agent framework for autonomous biomedical discovery. Every stage of the pipeline from normalization, exploration, hypothesis generation, to evaluation is executed end-to-end by Claude Code AI agents running inside isolated Docker containers. Each agent receives a skill-driven prompt, autonomously writes and executes analysis code, and produces structured artifacts that feed the next stage. An AI agent orchestrator manages the full autonomous research loop: extracts hypotheses inspired by knowledge graphs and the dataset, routes them to parallel validation agents, and tracks every experiment for reproducibility and repeats the cycle until the budget or number of hypotheses cycles is reached. No human intervention is required between steps as EcoXAI goes from raw dataset to ranked, evidence-backed biomedical hypotheses entirely through chained AI agent execution. The frontend provides real-time monitoring, experiment inspection, and hypothesis management.</td>
 </tr></table>
 
 ---
