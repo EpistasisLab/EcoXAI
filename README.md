@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="logo.jpg" alt="EcoXAI logo">
-</p>
-
 <h1 align="center">EcoXAI</h1>
 
 <p align="center"><b>Eco</b>system for e<b>X</b>plainable <b>AI</b></p>
