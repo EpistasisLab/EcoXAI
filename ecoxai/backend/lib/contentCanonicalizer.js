@@ -37,6 +37,11 @@ async function canonicalize(rawPath, filename, structure, docsDir, tablesDir) {
     );
     artifacts.push(...featherArtifacts);
   }
+  // Special handling for Parquet files (binary format)
+  else if (ext === '.parquet' && structure.document_type === 'table_dump') {
+    const parquetArtifacts = await canonicalizeParquetFile(rawPath, tablesDir);
+    artifacts.push(...parquetArtifacts);
+  }
   // Text-based files
   else {
     const content = await fs.readFile(rawPath, 'utf8');
@@ -547,7 +552,7 @@ except Exception as e:
     sys.exit(1)
 `;
 
-    const python = spawn('python', ['-c', pythonScript, rawPath]);
+    const python = spawn('python3', ['-c', pythonScript, rawPath]);
     let stdout = '';
     let stderr = '';
 
@@ -613,6 +618,83 @@ except Exception as e:
 
     python.on('error', (err) => {
       reject(new Error(`Failed to spawn Python: ${err.message}`));
+    });
+  });
+}
+
+/**
+ * Canonicalize Parquet file (binary columnar format) via Python/pyarrow
+ */
+async function canonicalizeParquetFile(rawPath, tablesDir) {
+  const { spawn } = require('child_process');
+
+  const parquetPath = path.join(tablesDir, 'table_1.parquet');
+
+  return new Promise((resolve, reject) => {
+    const pythonScript = `
+import sys, json
+import pyarrow.parquet as pq
+
+raw_path = sys.argv[1]
+try:
+    t = pq.read_table(raw_path)
+    columns = [{'name': f.name, 'type': str(f.type), 'nullable': f.nullable} for f in t.schema]
+    print(json.dumps({'columns': columns, 'row_count': t.num_rows, 'column_count': t.num_columns}))
+except Exception as e:
+    print(json.dumps({'error': str(e)}), file=sys.stderr)
+    sys.exit(1)
+`;
+
+    const python = spawn('python3', ['-c', pythonScript, rawPath]);
+    let stdout = '';
+    let stderr = '';
+
+    python.stdout.on('data', (data) => { stdout += data.toString(); });
+    python.stderr.on('data', (data) => { stderr += data.toString(); });
+
+    python.on('close', async (code) => {
+      if (code !== 0) {
+        reject(new Error(`Python parquet processing failed: ${stderr}`));
+        return;
+      }
+
+      try {
+        const result = JSON.parse(stdout);
+
+        await fs.copyFile(rawPath, parquetPath);
+
+        const metadataPath = path.join(tablesDir, 'table_1_meta.json');
+        const metadata = {
+          id: 'table_1',
+          source_format: 'parquet',
+          columns: result.columns,
+          row_count: result.row_count,
+          column_count: result.column_count,
+        };
+        await fs.writeFile(metadataPath, JSON.stringify(metadata, null, 2), 'utf8');
+
+        const mdPath = path.join(tablesDir, 'table_1.md');
+        const mdContent = generateFeatherTableMarkdown('table_1', result.columns, result.row_count);
+        await fs.writeFile(mdPath, mdContent, 'utf8');
+
+        resolve([{
+          id: 'table_1',
+          type: 'table',
+          path: parquetPath,
+          metadata_path: metadataPath,
+          markdown_path: mdPath,
+          format: 'parquet',
+          row_count: result.row_count,
+          column_count: result.column_count
+        }]);
+
+      } catch (err) {
+        reject(new Error(`Failed to process Python parquet output: ${err.message}`));
+      }
+    });
+
+    python.on('error', (err) => {
+      reject(new Error(`Failed to spawn Python for parquet: ${err.message}`));
     });
   });
 }
@@ -729,7 +811,7 @@ async function runFeatherPreflightCheck(rawPath, sampleRows = 10000) {
   const scriptPath = path.join(__dirname, '..', 'scripts', 'feather_null_check.py');
 
   return new Promise((resolve, reject) => {
-    execFile('python', [scriptPath, rawPath, String(sampleRows)], { maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
+    execFile('python3', [scriptPath, rawPath, String(sampleRows)], { maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
       if (err) {
         return reject(new Error(`feather_null_check.py failed: ${err.message}${stderr ? '\n' + stderr : ''}`));
       }

@@ -151,6 +151,36 @@ async function parseFeather(buffer) {
   }
 }
 
+async function parseParquet(buffer) {
+  const { execFile } = require('child_process');
+  const os = require('os');
+  const tmpPath = path.join(os.tmpdir(), `ecoxai_parquet_${Date.now()}.parquet`);
+  fs.writeFileSync(tmpPath, buffer);
+  return new Promise((resolve, reject) => {
+    const script = `
+import sys, json
+try:
+    import pyarrow.parquet as pq
+    t = pq.read_table(sys.argv[1])
+    print(json.dumps({"num_rows": t.num_rows, "columns": t.schema.names}))
+except ImportError:
+    print(json.dumps({"__error__": "pyarrow not installed"}))
+`;
+    execFile('python3', ['-c', script, tmpPath], { maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
+      try { fs.unlinkSync(tmpPath); } catch (_) {}
+      if (err) return reject(new Error(`Failed to parse Parquet file: ${err.message}\n${stderr}`));
+      let meta;
+      try { meta = JSON.parse(stdout.trim()); } catch (e) {
+        return reject(new Error(`Failed to parse Parquet file: unexpected output — ${e.message}`));
+      }
+      if (meta.__error__) return reject(new Error(`Failed to parse Parquet file: ${meta.__error__}`));
+      const headerRow = {};
+      meta.columns.forEach(c => { headerRow[c] = null; });
+      resolve(new Array(meta.num_rows).fill(headerRow));
+    });
+  });
+}
+
 async function parseFeatherViaPython(buffer) {
   const { execFile } = require('child_process');
   const os = require('os');
@@ -167,7 +197,7 @@ try:
 except ImportError:
     print(json.dumps({"__error__": "pyarrow not installed"}))
 `;
-    execFile('python', ['-c', script, tmpFeather], { maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
+    execFile('python3', ['-c', script, tmpFeather], { maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
       try { fs.unlinkSync(tmpFeather); } catch (_) {}
       if (err) return reject(new Error(`Failed to parse Feather file via Python: ${err.message}\n${stderr}`));
       let meta;
@@ -231,6 +261,7 @@ const routeDeps = {
   parseCSV,
   parseJSON,
   parseFeather,
+  parseParquet,
   parseWorkbook,
   containerManager,
   volumeManager,
@@ -281,6 +312,63 @@ app.post('/api/budget/reset', (req, res) => {
   saveState();
   broadcast({ type: 'BUDGET_UPDATE', budget: state.budget });
   res.json({ success: true, budget: state.budget });
+});
+
+app.post('/api/system/reset', async (req, res) => {
+  try {
+    orchestrator.pause();
+
+    // Stop all in-progress containers and delete their workspace volumes
+    for (const job of state.jobs) {
+      if (job.status === 'in-progress') {
+        await containerManager.stopJob(job.id).catch(() => {});
+        await volumeManager.deleteWorkspaceVolume(job.id).catch(() => {});
+      }
+    }
+
+    // Delete any remaining workspace volumes
+    await volumeManager.deleteAllWorkspaceVolumes().catch(() => {});
+
+    // Delete the shared datasets volume
+    await volumeManager.deleteDatasetVolume().catch(() => {});
+
+    // Wipe all SQLite data
+    dbManager.resetAll();
+
+    // Delete assets and wikis directories
+    // Clear contents but keep the directories (they may be bind-mounted)
+    const clearDir = (dir) => {
+      if (!fs.existsSync(dir)) return;
+      for (const entry of fs.readdirSync(dir)) {
+        fs.rmSync(path.join(dir, entry), { recursive: true, force: true });
+      }
+    };
+    clearDir(path.join(__dirname, 'assets'));
+    clearDir(path.join(__dirname, 'data', 'wikis'));
+
+    // Reset in-memory state
+    state.jobs = [];
+    state.datasets = {};
+    state.budget = { totalCostUsd: 0, jobCount: 0, sessions: [] };
+    saveState();
+
+    // Clear orchestrator in-memory maps
+    orchestrator.activeStages.clear();
+    orchestrator.hypothesisQueues.clear();
+    orchestrator.hypothesisCycles.clear();
+    orchestrator.stageRetryAttempts.clear();
+
+    broadcast({ type: 'JOB_UPDATE' });
+    broadcast({ type: 'DATASETS_PROMOTED' });
+    broadcast({ type: 'DATABASE_UPDATE' });
+    broadcast({ type: 'WIKI_UPDATE' });
+    broadcast({ type: 'BUDGET_UPDATE', budget: state.budget });
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[Reset] System reset failed:', err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // Settings
@@ -344,7 +432,7 @@ function watchDatasetFolder() {
     watcher.on('add', async (filePath) => {
       const filename = path.basename(filePath);
       const ext = path.extname(filename).toLowerCase();
-      if (!['.csv', '.json', '.feather', '.xlsx', '.xls'].includes(ext)) return;
+      if (!['.csv', '.json', '.feather', '.parquet', '.xlsx', '.xls'].includes(ext)) return;
 
       const alreadyIngested = Object.values(state.datasets).some(d => d.filename === filename);
       if (alreadyIngested) {
@@ -377,6 +465,9 @@ function watchDatasetFolder() {
         } else if (ext === '.xlsx' || ext === '.xls') {
           parsedData = parseWorkbook(buffer);
           fileType = 'xlsx';
+        } else if (ext === '.parquet') {
+          parsedData = await parseParquet(buffer);
+          fileType = 'parquet';
         } else {
           parsedData = await parseFeather(buffer);
           fileType = 'feather';

@@ -56,9 +56,8 @@ async function analyze(rawPath, filename) {
     };
   }
 
-  // Handle binary Feather files separately
-  if (ext === '.feather') {
-    // Feather files are always table dumps
+  // Handle binary Feather/Parquet files separately
+  if (ext === '.feather' || ext === '.parquet') {
     documentType = 'table_dump';
     sections = [{
       id: 'table_1',
@@ -68,7 +67,7 @@ async function analyze(rawPath, filename) {
       byte_length: (await fs.stat(rawPath)).size
     }];
     layoutComplexity = 'low';
-    encodingIssues = []; // Binary format, no encoding issues
+    encodingIssues = [];
 
   } else {
     // Read text-based files

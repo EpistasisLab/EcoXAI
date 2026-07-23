@@ -694,6 +694,30 @@ class VolumeManager {
     }
   }
 
+  async deleteAllWorkspaceVolumes() {
+    try {
+      const result = await docker.listVolumes({ filters: { name: [WORKSPACE_PREFIX] } });
+      const vols = result.Volumes || [];
+      for (const vol of vols) {
+        await docker.getVolume(vol.Name).remove().catch(err =>
+          console.warn(`[Volume] Could not delete ${vol.Name}:`, err.message)
+        );
+      }
+      console.log(`[Volume] Deleted ${vols.length} workspace volume(s)`);
+    } catch (err) {
+      console.warn('[Volume] Could not list workspace volumes:', err.message);
+    }
+  }
+
+  async deleteDatasetVolume() {
+    try {
+      await docker.getVolume(DATASETS_VOLUME).remove();
+      console.log(`[Volume] Deleted datasets volume ${DATASETS_VOLUME}`);
+    } catch (err) {
+      console.warn(`[Volume] Could not delete datasets volume:`, err.message);
+    }
+  }
+
   /**
    * Read a file from a Docker volume using a temporary Alpine container
    * Uses the same approach as readArtifact for consistency

@@ -567,6 +567,16 @@ class Orchestrator extends EventEmitter {
         }
       }
     }
+
+    // Datasets that are active (normalized) but have no pipeline jobs — re-trigger explore after a clear
+    for (const [datasetId, dataset] of Object.entries(this.deps.state.datasets || {})) {
+      if (dataset.status !== 'active') continue;
+      const hasJobs = jobs.some(j => j.datasetId === datasetId || j._pipelineDatasetId === datasetId);
+      if (!hasJobs && !this.activeStages.has(datasetId)) {
+        console.log(`[Orchestrator] Resume: dataset ${datasetId} is active with no jobs — re-triggering explore`);
+        await this._maybeAdvance('dataset_normalized', { datasetId });
+      }
+    }
   }
 
   async triggerStage(stageId, { datasetId }) {

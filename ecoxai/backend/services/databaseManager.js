@@ -397,6 +397,35 @@ class DatabaseManager {
     }
   }
 
+  clearWorkflowForDataset(datasetId) {
+    if (!this.db) return;
+    const runs = this.db.prepare('SELECT run_id FROM agent_runs WHERE dataset_id = ?').all(datasetId);
+    const runIds = runs.map(r => r.run_id);
+
+    if (runIds.length > 0) {
+      const rp = runIds.map(() => '?').join(',');
+      const hyps = this.db.prepare(`SELECT hypothesis_id FROM hypotheses WHERE run_id IN (${rp})`).all(...runIds);
+      const hypIds = hyps.map(h => h.hypothesis_id);
+
+      if (hypIds.length > 0) {
+        const hp = hypIds.map(() => '?').join(',');
+        this.db.prepare(`DELETE FROM hypothesis_evidence WHERE hypothesis_id IN (${hp})`).run(...hypIds);
+        if (this._upsertEmbedding) {
+          for (const id of hypIds) {
+            try { this.db.prepare('DELETE FROM vec_hypotheses WHERE rowid = ?').run(BigInt(id)); } catch (_) {}
+          }
+        }
+        this.db.prepare(`DELETE FROM hypotheses WHERE hypothesis_id IN (${hp})`).run(...hypIds);
+      }
+
+      this.db.prepare(`DELETE FROM tool_calls WHERE run_id IN (${rp})`).run(...runIds);
+      this.db.prepare(`DELETE FROM agent_steps WHERE run_id IN (${rp})`).run(...runIds);
+    }
+
+    this.db.prepare('DELETE FROM agent_runs WHERE dataset_id = ?').run(datasetId);
+    this.db.prepare('DELETE FROM feature_importance_results WHERE dataset_id = ?').run(datasetId);
+  }
+
   // ==================== Hypothesis Embeddings ====================
 
   saveEmbedding(hypothesisId, float32Array) {
@@ -550,6 +579,21 @@ class DatabaseManager {
         data.model_auc || null, data.model_accuracy || null]
     );
     return result.lastID;
+  }
+
+  resetAll() {
+    if (!this.db) return;
+    this.db.exec(`
+      DELETE FROM hypothesis_evidence;
+      DELETE FROM feature_importance_results;
+      DELETE FROM dataset_normalizations;
+      DELETE FROM agent_steps;
+      DELETE FROM tool_calls;
+      DELETE FROM hypotheses;
+      DELETE FROM agent_runs;
+      DELETE FROM jobs;
+      DELETE FROM datasets;
+    `);
   }
 
 }

@@ -1,0 +1,15 @@
+FROM node:20-slim
+
+RUN apt-get update && apt-get install -y python3 python3-pip build-essential && rm -rf /var/lib/apt/lists/*
+RUN pip3 install pyarrow --break-system-packages
+
+WORKDIR /ecoxai/backend
+
+COPY ecoxai/backend/package*.json ./
+RUN npm install
+
+COPY ecoxai/backend/ ./
+COPY ecoxai/frontend/ /ecoxai/frontend/
+
+EXPOSE 8081
+CMD ["node", "server.js"]

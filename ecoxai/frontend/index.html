@@ -49,8 +49,8 @@
         <label class="upload-area" for="file-upload">
           <div style="font-size:24px;margin-bottom:8px">📂</div>
           <div style="font-weight:600;margin-bottom:4px">Click to upload or drop files directly into <code>ecoxai/backend/datasets/</code></div>
-          <div style="font-size:11px">CSV, JSON, Feather, or Excel — add context, then start the pipeline</div>
-          <input id="file-upload" type="file" accept=".csv,.json,.feather,.xlsx,.xls">
+          <div style="font-size:11px">CSV, JSON, Feather, Parquet, or Excel — add context, then start the pipeline</div>
+          <input id="file-upload" type="file" accept=".csv,.json,.feather,.parquet,.xlsx,.xls">
           <div id="upload-status" style="margin-top:6px;font-size:11px;min-height:14px"></div>
         </label>
         <div id="ds-pipeline-banner" style="margin-top:16px;padding:12px 14px;border-radius:6px;background:var(--bg2);display:flex;align-items:center;gap:12px;justify-content:space-between">
@@ -248,6 +248,30 @@
             <div class="settings-row">
               <label></label>
               <button class="btn danger" onclick="app.resetBudget()">Reset Budget</button>
+            </div>
+          </div>
+          <div class="settings-section">
+            <div class="settings-section-title">Workflow</div>
+            <div class="settings-row" style="align-items:flex-start">
+              <label style="padding-top:4px">Clear Workflow</label>
+              <div style="display:flex;flex-direction:column;gap:6px">
+                <span id="clear-workflow-dataset" style="font-size:11px;color:var(--text-dim)">No dataset selected</span>
+                <div style="display:flex;align-items:center;gap:8px">
+                  <button class="btn danger" id="clear-workflow-btn" onclick="app.clearWorkflow()">Clear Workflow</button>
+                  <span id="clear-workflow-status" style="font-size:11px;color:var(--text-dim)"></span>
+                </div>
+                <span style="font-size:11px;color:var(--text-dim)">Keeps the dataset file. Deletes all jobs, hypotheses, wiki, and analysis results. Pipeline will be paused.</span>
+              </div>
+            </div>
+            <div class="settings-row" style="align-items:flex-start">
+              <label style="padding-top:4px">Reset System</label>
+              <div style="display:flex;flex-direction:column;gap:6px">
+                <div style="display:flex;align-items:center;gap:8px">
+                  <button class="btn danger" id="reset-system-btn" onclick="app.resetSystem()">Reset System</button>
+                  <span id="reset-system-status" style="font-size:11px;color:var(--text-dim)"></span>
+                </div>
+                <span style="font-size:11px;color:var(--text-dim)">Deletes all datasets, jobs, hypotheses, wiki, assets, and Docker volumes. Equivalent to reset.sh.</span>
+              </div>
             </div>
           </div>
           <div class="settings-section">

@@ -1288,6 +1288,11 @@ function applySettingsToForm() {
   document.getElementById('s-container-ram').value = state.serverSettings.containerRamMb ?? 12288;
   document.getElementById('s-budget-limit').value = state.serverSettings.budgetLimitUsd ?? 10;
   renderBudgetStatus();
+  const dsLabel = document.getElementById('clear-workflow-dataset');
+  if (dsLabel) {
+    const ds = state.datasets.find(d => d.id === state.selectedDatasetId);
+    dsLabel.textContent = ds ? ds.filename : 'No dataset selected';
+  }
 }
 
 function renderBudgetStatus() {
@@ -1313,6 +1318,11 @@ window.app = {
     state.selectedDatasetId = datasetId;
     renderDatasets();
     loadWiki(datasetId);
+    const dsLabel = document.getElementById('clear-workflow-dataset');
+    if (dsLabel) {
+      const ds = state.datasets.find(d => d.id === datasetId);
+      dsLabel.textContent = ds ? ds.filename : 'No dataset selected';
+    }
     const section = document.getElementById('ds-context-section');
     const input   = document.getElementById('ds-context-input');
     if (section && input) {
@@ -1686,6 +1696,76 @@ window.app = {
     const savedEl = document.getElementById('settings-saved');
     savedEl.style.display = 'block';
     setTimeout(() => { savedEl.style.display = 'none'; }, 2000);
+  },
+
+  async clearWorkflow() {
+    const datasetId = state.selectedDatasetId;
+    if (!datasetId) {
+      alert('No dataset selected. Select a dataset first.');
+      return;
+    }
+    const ds = state.datasets.find(d => d.id === datasetId);
+    const name = ds?.filename || datasetId;
+    if (!confirm(
+      `Clear workflow for "${name}"?\n\n` +
+      'This will permanently delete:\n' +
+      '  • All pipeline jobs for this dataset\n' +
+      '  • All hypotheses and analysis results\n' +
+      '  • The dataset wiki and context\n\n' +
+      'The dataset file and user-provided context will be kept.\n' +
+      'The pipeline will be paused and ready to re-run from scratch.'
+    )) return;
+
+    const btn = document.getElementById('clear-workflow-btn');
+    const st  = document.getElementById('clear-workflow-status');
+    btn.disabled = true;
+    st.style.color = 'var(--text-dim)';
+    st.textContent = 'Clearing…';
+
+    try {
+      const resp = await fetch(`${apiBase()}/datasets/${datasetId}/clear-workflow`, { method: 'POST' });
+      const data = await resp.json();
+      if (!resp.ok || !data.success) throw new Error(data.error || resp.statusText);
+      st.textContent = '✓ Cleared — pipeline is paused';
+      st.style.color = 'var(--green)';
+    } catch (e) {
+      st.textContent = `Error: ${e.message}`;
+      st.style.color = 'var(--red)';
+    } finally {
+      btn.disabled = false;
+    }
+  },
+
+  async resetSystem() {
+    if (!confirm(
+      'FULL SYSTEM RESET\n\n' +
+      'This will permanently delete:\n' +
+      '  • All datasets\n' +
+      '  • All jobs and pipeline state\n' +
+      '  • All hypotheses and wiki\n' +
+      '  • All assets and Docker volumes\n\n' +
+      'The backend will return to a clean initial state.\n\n' +
+      'This cannot be undone. Continue?'
+    )) return;
+
+    const btn = document.getElementById('reset-system-btn');
+    const st  = document.getElementById('reset-system-status');
+    btn.disabled = true;
+    st.style.color = 'var(--text-dim)';
+    st.textContent = 'Resetting…';
+
+    try {
+      const resp = await fetch(`${apiBase()}/system/reset`, { method: 'POST' });
+      const data = await resp.json();
+      if (!resp.ok || !data.success) throw new Error(data.error || resp.statusText);
+      st.textContent = '✓ Done';
+      st.style.color = 'var(--green)';
+    } catch (e) {
+      st.textContent = `Error: ${e.message}`;
+      st.style.color = 'var(--red)';
+    } finally {
+      btn.disabled = false;
+    }
   },
 
   async resetBudget() {
