@@ -20,5 +20,7 @@ echo "Starting EcoXAI (Docker)..."
 echo "  App:      http://localhost:8081"
 echo "  Frontend: http://localhost:3000"
 echo ""
+echo "  Tip: run with -d to detach (e.g. ./start-docker.sh -d)"
+echo ""
 
 docker compose -f "$SCRIPT_DIR/docker-compose.yml" up --build "$@"

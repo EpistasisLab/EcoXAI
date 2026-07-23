@@ -102,12 +102,28 @@ export CLAUDE_MODEL='unsloth/Qwen3.6-27B-MTP-GGUF:UD-Q4_K_XL'
 
 ### 2. Start Everything
 
+**Docker (recommended):**
+```bash
+./start-docker.sh        # foreground — Ctrl-C to stop
+./start-docker.sh -d     # detached (background)
+```
+
+This script:
+- Builds the `ecoxai-agent` Docker image if not already present
+- Builds and starts the backend container on **http://localhost:8081**
+- Starts the frontend container on **http://localhost:3000**
+
+To stop a detached deployment:
+```bash
+docker compose -f docker-compose.yml down
+```
+
+**Without Docker (local Node.js):**
 ```bash
 ./start.sh
 ```
 
-This single script handles everything on first run and subsequent runs:
-- Builds the `ecoxai-agent` Docker image if it is not already present
+- Builds the `ecoxai-agent` Docker image if not already present
 - Installs backend npm dependencies if `node_modules` is missing
 - Starts the backend on **http://localhost:8081**
 - Starts the frontend dev server on **http://localhost:3000**
