@@ -204,16 +204,20 @@ class ContainerManager {
 
       if (job._hypothesisId) envVars.push(`HYPOTHESIS_ID=${job._hypothesisId}`);
 
-      if (process.env.CLAUDE_CODE_USE_FOUNDRY === '1') {
+      // Local LLM (ANTHROPIC_BASE_URL) takes explicit priority over Foundry.
+      // CLAUDE_CODE_USE_FOUNDRY may be set in the environment by an active Claude Code
+      // session and must not bleed into agent containers when the user intends local-LLM mode.
+      if (process.env.ANTHROPIC_BASE_URL) {
+        envVars.push(`ANTHROPIC_API_KEY=${process.env.ANTHROPIC_API_KEY}`);
+        envVars.push(`ANTHROPIC_BASE_URL=${containerReachableUrl(process.env.ANTHROPIC_BASE_URL)}`);
+      } else if (process.env.CLAUDE_CODE_USE_FOUNDRY === '1') {
         envVars.push(`CLAUDE_CODE_USE_FOUNDRY=1`);
         envVars.push(`ANTHROPIC_FOUNDRY_RESOURCE=${process.env.ANTHROPIC_FOUNDRY_RESOURCE}`);
         envVars.push(`ANTHROPIC_FOUNDRY_API_KEY=${process.env.ANTHROPIC_FOUNDRY_API_KEY}`);
         if (process.env.ANTHROPIC_DEFAULT_SONNET_MODEL) envVars.push(`ANTHROPIC_DEFAULT_SONNET_MODEL=${process.env.ANTHROPIC_DEFAULT_SONNET_MODEL}`);
       } else {
         envVars.push(`ANTHROPIC_API_KEY=${process.env.ANTHROPIC_API_KEY}`);
-        if (process.env.ANTHROPIC_BASE_URL) {
-          envVars.push(`ANTHROPIC_BASE_URL=${containerReachableUrl(process.env.ANTHROPIC_BASE_URL)}`);
-        }
+        if (process.env.ANTHROPIC_DEFAULT_SONNET_MODEL) envVars.push(`ANTHROPIC_DEFAULT_SONNET_MODEL=${process.env.ANTHROPIC_DEFAULT_SONNET_MODEL}`);
       }
       if (process.env.CLAUDE_MODEL) envVars.push(`CLAUDE_MODEL=${process.env.CLAUDE_MODEL}`);
 

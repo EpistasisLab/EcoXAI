@@ -14,7 +14,16 @@ services:
       - transformers_cache:/root/.cache
     environment:
       - LEAN_PORT=8081
+      # Standard Anthropic API / local LLM
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - ANTHROPIC_BASE_URL=${ANTHROPIC_BASE_URL}
+      - CLAUDE_MODEL=${CLAUDE_MODEL}
+      # Azure Foundry — use ECOXAI_USE_FOUNDRY=1 (not CLAUDE_CODE_USE_FOUNDRY, which is
+      # set automatically by active Claude Code sessions and must not bleed into Docker).
+      - CLAUDE_CODE_USE_FOUNDRY=${ECOXAI_USE_FOUNDRY:-}
+      - ANTHROPIC_FOUNDRY_RESOURCE=${ANTHROPIC_FOUNDRY_RESOURCE:-}
+      - ANTHROPIC_FOUNDRY_API_KEY=${ANTHROPIC_FOUNDRY_API_KEY:-}
+      - ANTHROPIC_DEFAULT_SONNET_MODEL=${ANTHROPIC_DEFAULT_SONNET_MODEL:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped

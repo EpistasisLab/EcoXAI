@@ -36,6 +36,14 @@ if [ -n "${CLAUDE_MODEL}" ]; then
     MODEL_FLAG="--model ${CLAUDE_MODEL}"
 fi
 
+# Bootstrap ~/.claude so Claude Code skips the "not logged in" gate in non-interactive mode.
+# Required when the workspace volume is fresh and no prior OAuth session exists.
+mkdir -p /workspace/.claude
+if [ ! -f /workspace/.claude/settings.json ]; then
+    printf '{"hasCompletedOnboarding":true,"skipDangerousModePermissionPrompt":true}' \
+        > /workspace/.claude/settings.json
+fi
+
 claude $MODEL_FLAG --print --output-format stream-json --verbose --dangerously-skip-permissions "$TASK" --allowedTools "Bash(python*),Bash(pip*),Read,Write,Edit,Glob,Grep"
 
 # Capture exit code
